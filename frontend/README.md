@@ -1,14 +1,25 @@
-# Frontend (thin)
+# 夜写台 · Frontend
 
-The project is backend + AI-engineering first; the frontend is intentionally
-thin and can be added later (React + Vite). It only needs to:
+React + Vite 薄前端，围绕一块「稿纸」组织写作体验：
 
-1. Manage settings (projects / characters / world / chapters) via the CRUD API.
-2. Call `POST /projects/{id}/generate/continue` and render the **SSE** token
-   stream live (续写模式).
-3. Call `POST /projects/{id}/generate/breakthrough` and show the branch cards
-   (破壁模式).
-4. (v1.1) Surface literary citations and idiom suggestions in the editor margin.
+- **纸面编辑区**：章节正文，衬线稿纸样式，防抖自动保存。
+- **往下写（续写模式）**：SSE 流式输出逐字落在纸面下方，作者决定「并入正文」或「弃稿」。
+- **灵感侧栏**（批注浮签）：
+  - `线索` — RAG 观察窗，输入场景看检索层会喂给模型哪些设定（含相似度）。
+  - `破壁` — 描述剧情卡点，一次拿到 N 条走向不同的分支卡。
+  - `找词` — 成语推荐（向量召回 + LLM 从召回集内精选）。
+  - `引经` — 公有领域文学知识检索。
 
-Until then, the FastAPI Swagger UI at `http://localhost:8000/docs` is a fully
-usable interface for every endpoint.
+## 运行
+
+```bash
+# 先启动后端 (uvicorn app.main:app --port 8000) 与数据库
+cd frontend
+npm install
+npm run dev        # http://localhost:5173，API 由 vite 代理到 8000
+```
+
+无 UI 框架依赖：手写 CSS（`src/styles.css`），设计基调为「夜写台」——
+夜色墨蓝外框 + 冷调稿纸 + 朱砂批注红。
+
+后端接口也可直接用 Swagger UI 操作：`http://localhost:8000/docs`。
