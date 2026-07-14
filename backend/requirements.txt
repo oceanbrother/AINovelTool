@@ -1,0 +1,23 @@
+# --- Web framework ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+sse-starlette==2.1.3
+
+# --- Config ---
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# --- Database (async PostgreSQL + pgvector) ---
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+pgvector==0.3.6
+
+# --- HTTP client (LLM + embedding APIs) ---
+httpx==0.28.1
+
+# --- Local embedding backend (optional; not needed for EMBEDDING_BACKEND=openai) ---
+# Installs torch transitively; comment out if you only use the API backend.
+sentence-transformers==3.3.1
+
+# --- Eval / dev ---
+numpy==2.2.1

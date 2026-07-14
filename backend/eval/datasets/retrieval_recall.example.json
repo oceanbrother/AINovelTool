@@ -1,0 +1,17 @@
+[
+  {
+    "query": "主角在地铁站遇袭，对方使用了影子操控的能力",
+    "source_types": ["character", "world"],
+    "expected_substrings": ["影子", "操控"]
+  },
+  {
+    "query": "回忆主角和导师之间的师徒关系",
+    "source_types": ["character"],
+    "expected_substrings": ["导师", "师徒"]
+  },
+  {
+    "query": "描写守夜人组织对异常事件的处理规则",
+    "source_types": ["world"],
+    "expected_substrings": ["守夜人", "规则"]
+  }
+]
