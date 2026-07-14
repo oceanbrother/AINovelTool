@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # --- Database ---
     # Async SQLAlchemy URL. docker-compose provides a matching default.
     database_url: str = (
-        "postgresql+asyncpg://novel:novel@localhost:5432/ainovel"
+        "postgresql+asyncpg://novel:novel@localhost:5433/ainovel"
     )
 
     # --- Embedding ---

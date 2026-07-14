@@ -11,7 +11,8 @@ services:
       POSTGRES_PASSWORD: novel
       POSTGRES_DB: ainovel
     ports:
-      - "5432:5432"
+      # Host port 5433 to avoid clashing with a native PostgreSQL install on 5432.
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./backend/scripts/init_pgvector.sql:/docker-entrypoint-initdb.d/init.sql:ro
