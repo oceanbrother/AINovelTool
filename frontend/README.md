@@ -1,4 +1,4 @@
-# 夜写台 · Frontend
+# 乌鸦像写字台 · Frontend
 
 React + Vite 薄前端，围绕一块「稿纸」组织写作体验：
 
@@ -19,7 +19,7 @@ npm install
 npm run dev        # http://localhost:5173，API 由 vite 代理到 8000
 ```
 
-无 UI 框架依赖：手写 CSS（`src/styles.css`），设计基调为「夜写台」——
+无 UI 框架依赖：手写 CSS（`src/styles.css`），设计基调为「乌鸦像写字台」——
 夜色墨蓝外框 + 冷调稿纸 + 朱砂批注红。
 
 后端接口也可直接用 Swagger UI 操作：`http://localhost:8000/docs`。

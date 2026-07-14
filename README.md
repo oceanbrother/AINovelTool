@@ -103,7 +103,7 @@ AINovelTool/
 │   ├── scripts/         # init_pgvector.sql + 种子数据
 │   ├── eval/            # eval harness + 标注数据
 │   └── requirements.txt
-├── frontend/            # 夜写台 React 前端（Vite + SSE）
+├── frontend/            # 乌鸦像写字台 React 前端（Vite + SSE）
 ├── docker-compose.yml   # postgres(pgvector) + api
 ├── LICENSE              # MIT
 └── README.md

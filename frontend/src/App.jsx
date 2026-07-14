@@ -26,7 +26,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <span className="wordmark">
-          夜写台<span className="seal">·</span>
+          乌鸦像写字台<span className="seal">·</span>
         </span>
         <select
           value={projectId ?? ""}
@@ -52,7 +52,7 @@ function Gate({ onCreate }) {
   return (
     <div className="gate">
       <h1>
-        夜写台<span className="seal">·</span>
+        乌鸦像写字台<span className="seal">·</span>
       </h1>
       <p>还没有作品。起一个书名，开始你的第一章。</p>
       <form
