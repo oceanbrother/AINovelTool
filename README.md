@@ -103,7 +103,7 @@ AINovelTool/
 │   ├── scripts/         # init_pgvector.sql + 种子数据
 │   ├── eval/            # eval harness + 标注数据
 │   └── requirements.txt
-├── frontend/            # 薄前端（后置）
+├── frontend/            # 乌鸦像写字台 React 前端（Vite + SSE）
 ├── docker-compose.yml   # postgres(pgvector) + api
 ├── LICENSE              # MIT
 └── README.md
@@ -123,7 +123,7 @@ AINovelTool/
 - [x] embedding + pgvector 检索 + eval harness 骨架
 - [x] 生成（续写 + 破壁）+ 滚动摘要
 - [x] v1.1：文学引用库 + 成语推荐（复用检索底座）
-- [ ] 薄前端（React + SSE 实时渲染）
+- [x] 薄前端（React + SSE 实时渲染，见 frontend/）
 - [ ] 扩充标注评测集（~50 例）并产出对比数字
 
 ---

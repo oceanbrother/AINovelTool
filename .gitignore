@@ -22,6 +22,9 @@ node_modules/
 frontend/dist/
 frontend/.vite/
 
+# Claude Code local tooling (vendored third-party skills)
+.claude/skills/
+
 # OS / editor
 .DS_Store
 Thumbs.db
