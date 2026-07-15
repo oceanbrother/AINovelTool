@@ -1,12 +1,18 @@
 # -*- coding: utf-8 -*-
 """Seed the literary citation library (v1.1, Feature A).
 
-The whitelist is enforced HERE, at ingest: only public-domain works are admitted
-to the database (mainland-China rule: author dead 50+ years; verbatim 名句 only
-when the *translator* is also public-domain — otherwise the knowledge entry
-paraphrases instead of quoting). Retrieval and generation then physically cannot
-surface a copyrighted or fabricated line — the protection lives in the data,
-not a prompt.
+Two sub-libraries, guarded HERE at ingest:
+
+  金句库 (verbatim quotes, knowledge_type=公认名句) — public-domain works only
+      (mainland-China rule: author dead 50+ years), and verbatim lines only
+      when the *translator* is also public-domain (朱生豪/郑振铎…); modern
+      translations are paraphrased instead.
+  素材库 (facts: 写作背景/主题解读/内容概括/典故/公认评价) — open to works
+      still under copyright (is_public_domain=False): facts are not
+      copyrightable, so authors can reference these works' plots and themes
+      while the system remains structurally unable to emit their prose.
+
+The protection lives in the data, not a prompt.
 
 Taxonomy (`category`): 体裁 — 诗歌 / 戏剧 / 散文 / 志怪文学;
 novels by theme — 爱情文学 / 战争文学 / 现实文学 / 哲学 / 成长文学.
@@ -106,6 +112,7 @@ WORKS = [
             ("作者背景", "莎士比亚四大悲剧之首，王子复仇的故事被写成了人类犹疑与自省的标本。"),
             ("公认名句", "生存还是毁灭，这是一个值得考虑的问题。（朱生豪译）"),
             ("主题解读", "哈姆雷特的延宕不是懦弱，而是思想过剩者面对行动时的深渊——想得越清楚，越难落刀。"),
+            ("内容概括", "丹麦王子哈姆雷特得父亲亡魂告知：叔父弑兄篡位、迎娶王后。他装疯查证、借戏中戏逼出真相，却误杀恋人之父，错失复仇良机；终局比剑，毒剑与毒酒之下王室尽覆，王子亦亡。"),
         ],
     },
     {
@@ -158,6 +165,7 @@ WORKS = [
         "knowledge": [
             ("主题解读", "取经是一场心性的修行，八十一难降的都是心魔；孙悟空由反抗到成佛，锋芒收于紧箍。"),
             ("典故", "大闹天宫：石猴不受天庭秩序约束，「皇帝轮流做，明年到我家」，是全书最恣意的反抗篇章。"),
+            ("内容概括", "花果山石猴访道得名孙悟空，大闹天宫被压五行山下五百年；受观音点化保唐僧西天取经，与猪八戒、沙僧一路降妖除魔，历经九九八十一难终抵灵山，取回真经、修成正果。"),
         ],
     },
     {
@@ -171,6 +179,7 @@ WORKS = [
             ("作者背景", "蒲松龄屡试不第，设茶棚收集四方异闻，穷四十年写成孤愤之书。"),
             ("主题解读", "借鬼狐写人间，妖有情而人无情；超自然是照见世情的镜子——都市怪谈的古典源头。"),
             ("公认评价", "郭沫若题联评价：写鬼写妖高人一等，刺贪刺虐入骨三分。"),
+            ("内容概括", "近五百篇志怪短章：书生夜读遇狐仙，画皮之下藏恶鬼，冤魂托梦雪沉冤——人妖相恋常比人间更有情，官虎吏狼倒比鬼魅更狰狞。"),
         ],
     },
     {
@@ -198,6 +207,7 @@ WORKS = [
             ("作者背景", "奥斯汀终身未婚，深居英国乡间，却以细腻的反讽写透了婚恋与人性——爱情可以靠观察与想象抵达。"),
             ("主题解读", "傲慢让别人无法来爱我，偏见让我无法去爱别人；达西与伊丽莎白的和解是两次自我修正的相遇。"),
             ("公认名句", "凡是有钱的单身汉，总想娶位太太，这已经成了一条举世公认的真理。"),
+            ("内容概括", "班纳特家五姐妹待字闺中：伊丽莎白初见达西只觉其傲慢，又误信军官威克姆的谗言；达西求婚被拒后长信剖白，误会层层解开，妹妹私奔的危机反成转机，两人各自放下傲慢与偏见终成眷属。"),
         ],
     },
     {
@@ -211,6 +221,7 @@ WORKS = [
             ("作者背景", "曹雪芹出身江宁织造世家，家道中落后于贫困中著书，「披阅十载，增删五次」。"),
             ("主题解读", "以宝黛爱情为线，写尽钟鸣鼎食之家的繁华与倾颓，真事隐去、假语存焉。"),
             ("公认名句", "假作真时真亦假，无为有处有还无。"),
+            ("内容概括", "女娲遗石入世为贾宝玉，与还泪而来的林黛玉两小无猜，与持金锁的薛宝钗构成金玉之说；大观园诗酒繁华的背后，贾府由极盛滑向抄没，黛玉泪尽而逝，宝玉娶钗后出家——白茫茫大地真干净。"),
         ],
     },
     {
@@ -223,6 +234,7 @@ WORKS = [
         "knowledge": [
             ("主题解读", "贫穷、卑微、不美，但灵魂平等——简·爱把爱情建立在人格对等之上，是女性叙事的里程碑。"),
             ("公认名句", "你以为我贫穷、相貌平平就没有感情吗？我的灵魂跟你一样，我的心也跟你完全一样。"),
+            ("内容概括", "孤女简·爱在舅妈家与慈善学校的苛待中长大，到桑菲尔德庄园任家庭教师，与主人罗切斯特相爱；婚礼上惊悉阁楼里锁着他的疯妻，简出走流浪，最终在庄园焚毁、罗切斯特失明后归来，与他平等地重聚。"),
         ],
     },
     # ------------------------------------------------------------- 小说·战争文学
@@ -237,6 +249,7 @@ WORKS = [
             ("作者背景", "托尔斯泰以1812年卫国战争为轴，写四大家族的沉浮，被公认为长篇小说的巅峰之一。"),
             ("主题解读", "战争在托尔斯泰笔下不是英雄的舞台而是偶然的洪流——历史由无数无名者的微小意志汇成，统帅不过是浪尖的泡沫。"),
             ("典故", "奥斯特里茨的天空：安德烈公爵重伤仰望高远流云，功名忽然渺小——战场上最著名的一次抬头。"),
+            ("内容概括", "以1805至1812年俄法战争为幕布：安德烈在功名与幻灭间沉浮，皮埃尔于放浪、决斗与俘虏营中寻找生命的意义，娜塔莎从舞会明珠历经背叛而成熟；拿破仑兵败莫斯科大火，几大家族的命运在战争与和平的交替中各归其所。"),
         ],
     },
     {
@@ -249,6 +262,7 @@ WORKS = [
         "knowledge": [
             ("主题解读", "在正史与民间讲史之间，把权谋与忠义写成中国人共同的性格词典。"),
             ("公认名句", "话说天下大势，分久必合，合久必分。"),
+            ("内容概括", "从桃园结义到三分归晋：曹操挟天子以令诸侯，赤壁一把火烧定三分格局；诸葛亮受托孤之重六出祁山、鞠躬尽瘁，关张刘相继凋零，英雄谢幕后，天下尽归司马。"),
         ],
     },
     # ------------------------------------------------------------- 小说·现实文学
@@ -275,6 +289,7 @@ WORKS = [
         "knowledge": [
             ("作者背景", "老舍是「人民艺术家」，以北平市民生活为底色，写尽底层的挣扎与体面。"),
             ("主题解读", "祥子三起三落，买车的梦被时代碾碎三次——个人奋斗在倾斜的社会里救不了自己，好人如何一步步沉沦是全书最狠的追问。"),
+            ("内容概括", "北平车夫祥子只想凭力气挣一辆自己的车：头一辆被乱兵抢走，攒的钱被侦探敲诈，虎妞难产又卖掉第三辆；待到心底最后的亮光小福子自尽，这个要强的乡下青年终于垮掉，沦为城市里一具体面的行尸。"),
         ],
     },
     {
@@ -287,6 +302,7 @@ WORKS = [
         "knowledge": [
             ("作者背景", "陀思妥耶夫斯基曾被判死刑、临刑赦免、流放西伯利亚，他的小说是在深渊边写成的。"),
             ("主题解读", "拉斯柯尔尼科夫用「超人理论」说服自己杀人，却被自己的良知审判——刑罚在法庭之前，先在失眠的每一夜执行。"),
+            ("内容概括", "彼得堡的穷大学生拉斯柯尔尼科夫杀死放高利贷的老太婆，以验证「不平凡的人有权跨过障碍」；此后他在高烧、恐惧与良知间煎熬，妓女索尼娅的信仰引他当众亲吻大地、投案自首，在西伯利亚流放中开始精神的复活。"),
         ],
     },
     {
@@ -299,6 +315,7 @@ WORKS = [
         "knowledge": [
             ("作者背景", "毛姆以冷静近乎刻薄的观察写人性，自称二流作家里坐头把交椅，读者却始终站在他一边。"),
             ("主题解读", "证券经纪人抛下一切去画画，众人看见满地六便士，他只看见月亮——理想对世俗的背叛，写得毫不浪漫、近乎残忍。"),
+            ("内容概括", "伦敦证券经纪人思特里克兰德人到中年留下一纸便条弃家出走，在巴黎穷画室里近乎冷酷地作画，辗转流落塔希提岛，与土著女子共同生活；他在麻风病中完成毕生杰作的壁画，遗命死后付之一炬。"),
         ],
     },
     {
@@ -311,6 +328,7 @@ WORKS = [
         "knowledge": [
             ("作者背景", "狄更斯以连载小说为生民立传，善写大时代里小人物的挣扎与光辉。"),
             ("公认名句", "这是最好的时代，这是最坏的时代。"),
+            ("内容概括", "巴黎与伦敦之间：曼内特医生含冤入狱十八年，获释后女儿露西嫁给隐姓埋名的法国贵族后裔达尔奈；大革命的恐怖岁月里达尔奈被旧账牵连判处死刑，长年落拓、深爱露西的律师卡顿顶替他走上断头台——「我做过最好的事」。"),
         ],
     },
     {
@@ -323,6 +341,7 @@ WORKS = [
         "knowledge": [
             ("作者背景", "雨果流亡期间完成此书，自言写给「一切苦难中的人」。"),
             ("主题解读", "冉阿让的一生是良知对法律、宽恕对惩罚的漫长胜利；主教的银烛台是全书善意的火种。"),
+            ("内容概括", "苦役犯冉阿让为一块面包服刑十九年，被米里哀主教的银烛台感化后化名重生，官至市长又为救无辜者自曝身份；他抚养孤女珂赛特长大，一生被警长沙威追缉，在巴黎街垒战中放走沙威、救出女婿马吕斯，最终在儿女环绕与宽恕中安然离世。"),
         ],
     },
     {
@@ -334,6 +353,7 @@ WORKS = [
         "themes": ["江湖", "官逼民反", "义气"],
         "knowledge": [
             ("主题解读", "一百单八将逼上梁山，写的是秩序崩坏处江湖如何自组织——义气既是纽带也是悲剧根源。"),
+            ("内容概括", "高俅当道、官逼民反：林冲雪夜上梁山，武松血溅鸳鸯楼，鲁智深倒拔垂杨柳，一百单八将殊途同归聚义水泊；宋江力主招安后奉命征方腊，兄弟十损七八，凯旋之日即是凋零之时，忠义堂终成空堂。"),
         ],
     },
     # ------------------------------------------------------------- 小说·哲学
@@ -347,6 +367,7 @@ WORKS = [
         "knowledge": [
             ("作者背景", "加缪生于阿尔及利亚贫民家庭，44岁获诺贝尔文学奖，荒诞哲学的代言人。"),
             ("主题解读", "默尔索因在母亲葬礼上没有哭而被判处死刑——社会审判的不是他的罪行，而是他拒绝表演感情的诚实。"),
+            ("内容概括", "阿尔及尔小职员默尔索接连经历母亲葬礼、一段新恋情和一场邻里纠纷，始终淡漠如旁观者；他在正午海滩上因阳光刺眼扣动扳机杀死一个阿拉伯人，法庭却围绕「葬礼上没有哭」定罪，他拒绝忏悔，在死刑前夜第一次向世界的温柔冷漠敞开心怀。"),
         ],
     },
     {
@@ -372,9 +393,96 @@ WORKS = [
         "knowledge": [
             ("作者背景", "狄更斯最钟爱的「宠儿之书」，大量取材他做童工、当速记员的亲身经历。"),
             ("主题解读", "孤儿大卫从继父的皮鞭下走到作家的书桌前——成长小说的原型结构：把命运给的每一次羞辱都变成叙述的资产。"),
+            ("内容概括", "遗腹子大卫在暴虐继父与童工作坊中长大，投奔姨婆后重获教育；历经初恋朵拉早逝、揭穿希普的伪善阴谋，最终与艾妮斯结合，成为作家。"),
+        ],
+    },
+    # --------------------------------------------------------------------
+    # 以下作品仍在著作权保护期内（is_public_domain=False）：只进素材库
+    # （写作背景/主题解读/内容概括均为事实性知识，不受版权保护），
+    # 金句库对它们结构性关闭——入库守卫会丢弃任何 公认名句 条目。
+    # --------------------------------------------------------------------
+    {
+        "title": "白玉苦瓜",
+        "author": "余光中",
+        "era": "20世纪70年代",
+        "school": "现代诗",
+        "category": "诗歌",
+        "is_public_domain": False,
+        "themes": ["乡愁", "家国", "时间", "艺术"],
+        "knowledge": [
+            ("写作背景", "1974年出版的诗集，得名于台北故宫所藏的白玉雕苦瓜；写于台湾国际处境剧变的年代，余光中以回归故土的民族意识入诗，兼收民谣与摇滚的节奏。"),
+            ("内容概括", "收录《乡愁》《乡愁四韵》《民歌》等诗作；《乡愁》以邮票、船票、坟墓、海峡四个意象层层递进，把与母亲的通信、渡海的婚旅、丧母之痛推向两岸相望的家国之思。"),
+            ("主题解读", "乡愁由私人记忆放大为民族命题；「白玉苦瓜」的意象是全书的题眼——苦难的瓜身被时间与艺术摩挲成温润的玉，苦尽而成器。"),
+        ],
+    },
+    {
+        "title": "倾城之恋",
+        "author": "张爱玲",
+        "era": "20世纪40年代",
+        "school": "海派小说",
+        "category": "爱情文学",
+        "is_public_domain": False,
+        "themes": ["爱情", "算计", "乱世", "婚姻"],
+        "knowledge": [
+            ("写作背景", "1943年发表于上海《杂志》，张爱玲的成名作之一；小说后半的香港围城为作者亲历，家族身影亦渗入其中。"),
+            ("内容概括", "离婚后寄居娘家的白流苏耗尽资财、备受冷眼，与多金浪子范柳原在上海与香港之间互相试探、各怀算计；香港沦陷炸毁了所有退路，两个精刮的人反而在废墟里结成了平实的婚姻。"),
+            ("主题解读", "爱情被写成一场势均力敌的攻防战——要倾覆一座城市，才成全一段婚姻。张爱玲对浪漫叙事的反讽在此最锋利：乱世里的爱情，首先是生存策略。"),
+        ],
+    },
+    {
+        "title": "金锁记",
+        "author": "张爱玲",
+        "era": "20世纪40年代",
+        "school": "海派小说",
+        "category": "爱情文学",
+        "is_public_domain": False,
+        "themes": ["情欲", "金钱", "家族", "扭曲"],
+        "knowledge": [
+            ("写作背景", "1943年完成，初载《杂志》，后收入小说集《传奇》；人物故事脱胎于李鸿章次子李经述家中，傅雷誉之为「我们文坛最美的收获之一」。"),
+            ("内容概括", "麻油店出身的曹七巧被兄嫂嫁给姜家残废的二少爷，爱慕小叔子而不可得，在大家族里困守半生；分家后她守着用青春换来的家财，性情彻底扭曲，转而亲手搅毁儿子与女儿的婚姻幸福。"),
+            ("主题解读", "从被压迫者到压迫者——金钱这把「金锁」锁死了七巧的情欲，也让她把自己受过的苦难原样复制给下一代；封建家庭对女性人格的绞杀，写到了骨头里。"),
+        ],
+    },
+    {
+        "title": "麦田里的守望者",
+        "author": "J.D.塞林格",
+        "era": "20世纪50年代",
+        "school": "成长小说",
+        "category": "成长文学",
+        "is_public_domain": False,
+        "themes": ["青春", "反叛", "纯真", "疏离"],
+        "knowledge": [
+            ("写作背景", "1951年出版；塞林格参加过二战诺曼底登陆，战争创伤沉淀为战后美国青年的精神苦闷。小说成为一代代青少年的启蒙书，作者本人却自此隐居避世半个世纪。"),
+            ("内容概括", "十六岁的霍尔顿再次被学校开除，不敢回家，在纽约独自游荡三天两夜：酒吧、旅馆、旧友、修女，看什么都「假模假式」；只有对妹妹菲比，他说出了唯一想做的事——守在麦田悬崖边，接住奔跑的孩子。"),
+            ("主题解读", "成长被写成一场对虚伪成人世界的消极抵抗；「麦田守望者」的愿望，是拒绝堕落的天真宣言——青春期文学从此有了自己的原型声音。"),
         ],
     },
 ]
+
+
+QUOTE_TYPE = "公认名句"
+
+
+def _admissible_knowledge(w: dict) -> list[tuple[str, str]]:
+    """The 金句库/素材库 guard: works still under copyright may contribute
+    factual 素材 only — any verbatim quote is dropped loudly at ingest."""
+    if w.get("is_public_domain", True):
+        return w["knowledge"]
+    kept = [(k, c) for k, c in w["knowledge"] if k != QUOTE_TYPE]
+    dropped = len(w["knowledge"]) - len(kept)
+    if dropped:
+        print(f"  ! {w['title']}: dropped {dropped} verbatim quote(s) — work is under copyright")
+    return kept
+
+
+async def _insert_knowledge(db, work_id: int, rows: list[tuple[str, str]]) -> None:
+    vectors = await embed_texts([content for _k, content in rows])
+    for (kind, content), vec in zip(rows, vectors):
+        db.add(
+            LiteraryKnowledge(
+                work_id=work_id, knowledge_type=kind, content=content, embedding=vec
+            )
+        )
 
 
 async def main() -> None:
@@ -383,16 +491,26 @@ async def main() -> None:
             (w.title, w.author): w
             for w in (await db.execute(select(LiteraryWork))).scalars().all()
         }
-        added = updated = 0
+        added = updated = backfilled = 0
         for w in WORKS:
-            if not w.get("is_public_domain", True):
-                continue  # whitelist guard
+            knowledge = _admissible_knowledge(w)
             key = (w["title"], w["author"])
             if key in existing:
                 row = existing[key]
                 if row.category != w["category"]:
                     row.category = w["category"]  # backfill taxonomy
                     updated += 1
+                have = set(
+                    (await db.execute(
+                        select(LiteraryKnowledge.content).where(
+                            LiteraryKnowledge.work_id == row.id
+                        )
+                    )).scalars().all()
+                )
+                missing = [(k, c) for k, c in knowledge if c not in have]
+                if missing:
+                    await _insert_knowledge(db, row.id, missing)
+                    backfilled += len(missing)
                 continue
             work = LiteraryWork(
                 title=w["title"],
@@ -401,27 +519,16 @@ async def main() -> None:
                 category=w.get("category"),
                 school=w.get("school"),
                 themes=w.get("themes", []),
-                is_public_domain=True,
+                is_public_domain=w.get("is_public_domain", True),
             )
             db.add(work)
             await db.flush()
-
-            texts = [content for _kind, content in w["knowledge"]]
-            vectors = await embed_texts(texts)
-            for (kind, content), vec in zip(w["knowledge"], vectors):
-                db.add(
-                    LiteraryKnowledge(
-                        work_id=work.id,
-                        knowledge_type=kind,
-                        content=content,
-                        embedding=vec,
-                    )
-                )
+            await _insert_knowledge(db, work.id, knowledge)
             added += 1
         await db.commit()
     print(
-        f"literary library seeded ({added} new, {updated} categories backfilled, "
-        f"{len(WORKS)} defined)."
+        f"literary library seeded ({added} new works, {updated} categories updated, "
+        f"{backfilled} knowledge rows backfilled, {len(WORKS)} defined)."
     )
 
 

@@ -17,6 +17,6 @@ async def literary_quotes(
     """Feature A — retrieve grounded, public-domain literary citations for a
     scene/theme. The LLM may only surface what exists in the library."""
     quotes = await literary.retrieve_quotes(
-        db, payload.query, payload.top_k, payload.category
+        db, payload.query, payload.top_k, payload.category, payload.library
     )
     return LiteraryQuoteResponse(query=payload.query, quotes=quotes)

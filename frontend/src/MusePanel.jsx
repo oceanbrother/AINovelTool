@@ -182,14 +182,34 @@ const QUOTE_CATEGORIES = [
   "爱情文学", "战争文学", "现实文学", "哲学", "成长文学",
 ];
 
+const LIBRARIES = [
+  { value: "", label: "双库" },
+  { value: "素材", label: "素材库" },
+  { value: "金句", label: "金句库" },
+];
+
 function QuotesPane() {
   const [category, setCategory] = useState("");
+  const [library, setLibrary] = useState("");
   const pane = usePane(
-    async (q) => (await api.literaryQuotes(q, category)).quotes
+    async (q) => (await api.literaryQuotes(q, category, library)).quotes
   );
   return (
     <div className="pane">
       <AskForm pane={pane} placeholder="当前情节的主题，如：爱情与想象" action="引经" />
+      <div className="library-toggle" role="radiogroup" aria-label="选择检索库">
+        {LIBRARIES.map((l) => (
+          <button
+            key={l.value}
+            role="radio"
+            aria-checked={library === l.value}
+            className={library === l.value ? "active" : ""}
+            onClick={() => setLibrary(l.value)}
+          >
+            {l.label}
+          </button>
+        ))}
+      </div>
       <select
         className="category-filter"
         value={category}
