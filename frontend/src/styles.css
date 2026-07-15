@@ -320,6 +320,16 @@ input, textarea, select {
 }
 .muse .ask input::placeholder { color: var(--mist-dim); }
 
+.muse .category-filter {
+  width: 100%;
+  margin-bottom: 12px;
+  background: var(--night-2);
+  border: 1px solid var(--night-3);
+  border-radius: 4px;
+  padding: 6px 10px;
+  color: var(--mist);
+}
+
 .muse .pane .empty {
   padding: 28px 12px;
   text-align: center;

@@ -8,12 +8,16 @@ class LiteraryQuoteRequest(BaseModel):
 
     query: str
     top_k: int = 5
+    # 可选分类过滤：诗歌 / 戏剧 / 散文 / 志怪文学 / 爱情文学 / 战争文学 /
+    # 现实文学 / 哲学 / 成长文学
+    category: str | None = None
 
 
 class LiteraryQuote(BaseModel):
     work_title: str
     author: str
     era: str | None
+    category: str | None         # 体裁/主题分类
     knowledge_type: str          # 作者背景 / 主题解读 / 公认名句 / 句式
     content: str
     score: float

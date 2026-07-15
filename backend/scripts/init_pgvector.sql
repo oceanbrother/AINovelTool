@@ -120,6 +120,9 @@ CREATE TABLE IF NOT EXISTS literary_works (
     title            TEXT NOT NULL,
     author           TEXT NOT NULL,
     era              TEXT,                       -- 年代 / 时期
+    -- 体裁/主题分类：诗歌 / 戏剧 / 散文 / 志怪文学，小说按主题细分为
+    -- 爱情文学 / 战争文学 / 现实文学 / 哲学 / 成长文学
+    category         TEXT,
     is_public_domain BOOLEAN NOT NULL DEFAULT TRUE,
     themes           JSONB NOT NULL DEFAULT '[]'::jsonb,  -- 主题标签数组
     school           TEXT,                       -- 流派
