@@ -63,5 +63,6 @@ async def delete_world(
     obj = await db.get(WorldSetting, world_id)
     if obj is None or obj.project_id != project_id:
         raise HTTPException(404, "world setting not found")
+    await indexing.remove_chunks(db, "world", obj.id)
     await db.delete(obj)
     await db.commit()

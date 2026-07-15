@@ -81,11 +81,16 @@ python scripts/seed_literary.py
 项目自带可复现的小型评测，用数据说话而非只调 API。详见
 [backend/eval/README.md](backend/eval/README.md)。
 
-| 指标 | 脚本 |
-| --- | --- |
-| 检索召回率 Recall@k / 平均块数 / 延迟 | `eval/run_retrieval_eval.py` |
-| Token/字数：全量塞 vs RAG 选择 | `eval/run_token_eval.py` |
-| 成语幻觉率（编造不存在成语的比例）| `eval/run_idiom_hallucination_eval.py` |
+| 指标 | 脚本 | 实测结果 |
+| --- | --- | --- |
+| 检索召回率 Recall@k / 平均块数 / 延迟 | `eval/run_retrieval_eval.py` | **Recall@6 = 1.000**（30 例标注集，16 项设定库，均延迟 256ms）|
+| Token/字数：全量塞 vs RAG 选择 | `eval/run_token_eval.py` | **上下文压缩 62.5%**（top-k 固定为 6；库越大压缩率越高）|
+| 生成性能：TTFT / 流式吞吐 / 并发 | `eval/run_perf_eval.py` | 检索 P95 161ms · SSE 首 token P50 3.1s · 61 events/s |
+| 成语幻觉率（编造不存在成语的比例）| `eval/run_idiom_hallucination_eval.py` | 待跑（需扩充成语库规模）|
+
+> 测试环境：Windows 11 / CPU 推理（bge-m3 本地）/ DeepSeek deepseek-chat / pgvector HNSW。
+> 标注集：[eval/datasets/retrieval_recall.v1.json](backend/eval/datasets/retrieval_recall.v1.json)，
+> 设定库种子：[eval/seed_eval_settings.py](backend/eval/seed_eval_settings.py)，可一键复现。
 
 ## 目录结构
 
@@ -124,7 +129,8 @@ AINovelTool/
 - [x] 生成（续写 + 破壁）+ 滚动摘要
 - [x] v1.1：文学引用库 + 成语推荐（复用检索底座）
 - [x] 薄前端（React + SSE 实时渲染，见 frontend/）
-- [ ] 扩充标注评测集（~50 例）并产出对比数字
+- [x] 标注评测集（30 例）+ 召回率 / token 压缩 / 生成性能实测数字
+- [ ] 扩充成语库与文学库规模，跑幻觉拦截率对比（vs 纯 LLM baseline）
 
 ---
 

@@ -70,5 +70,6 @@ async def delete_character(
     obj = await db.get(Character, character_id)
     if obj is None or obj.project_id != project_id:
         raise HTTPException(404, "character not found")
+    await indexing.remove_chunks(db, "character", obj.id)
     await db.delete(obj)
     await db.commit()

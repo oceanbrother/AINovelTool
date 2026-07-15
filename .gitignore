@@ -24,6 +24,7 @@ frontend/.vite/
 
 # Claude Code local tooling (vendored third-party skills)
 .claude/skills/
+.agents/
 
 # OS / editor
 .DS_Store

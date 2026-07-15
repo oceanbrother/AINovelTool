@@ -61,6 +61,18 @@ async def _replace_chunks(
     await db.flush()
 
 
+async def remove_chunks(
+    db: AsyncSession, source_type: str, source_id: int
+) -> None:
+    """Drop a source's chunks so deleted settings stop being retrievable."""
+    await db.execute(
+        delete(SettingChunk).where(
+            SettingChunk.source_type == source_type,
+            SettingChunk.source_id == source_id,
+        )
+    )
+
+
 async def index_character(db: AsyncSession, c: Character) -> None:
     await _replace_chunks(db, c.project_id, "character", c.id, [_character_text(c)])
 
