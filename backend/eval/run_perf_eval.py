@@ -81,15 +81,20 @@ async def timed_retrieve(client: httpx.AsyncClient, pid: int, query: str) -> flo
     return (time.perf_counter() - t0) * 1000
 
 
-async def p1_retrieval(client: httpx.AsyncClient, pid: int, rounds: int = 3) -> dict:
+async def p1_retrieval(client: httpx.AsyncClient, pid: int, rounds: int = 3) -> list[dict]:
     # warm-up: first call may pay one-off model/list initialisation costs
     await timed_retrieve(client, pid, "预热")
-    ms = [
+    cold = [await timed_retrieve(client, pid, q) for q in RETRIEVAL_QUERIES]
+    warm = [
         await timed_retrieve(client, pid, q)
-        for _ in range(rounds)
+        for _ in range(rounds - 1)
         for q in RETRIEVAL_QUERIES
     ]
-    return report("P1 retrieval", ms)
+    # cold = unseen queries (embedding computed); warm = repeats (cache-eligible)
+    return [
+        report("P1 retrieval (cold)", cold),
+        report("P1 retrieval (warm)", warm),
+    ]
 
 
 async def p2_p3_sse(client: httpx.AsyncClient, pid: int, chapter_id: int, runs: int = 5) -> list[dict]:
@@ -138,10 +143,13 @@ async def p4_concurrency(client: httpx.AsyncClient, pid: int) -> list[dict]:
     rows = []
     for level in (1, 5, 10):
         ms: list[float] = []
-        # 3 waves per level so each wave is exactly `level` in-flight requests
+        # 3 waves per level so each wave is exactly `level` in-flight requests.
+        # Queries carry a unique suffix so every request is a cache MISS —
+        # this measures true concurrent encoding, not the query cache.
         for wave in range(3):
             batch = [
-                RETRIEVAL_QUERIES[(wave * level + i) % len(RETRIEVAL_QUERIES)]
+                f"{RETRIEVAL_QUERIES[(wave * level + i) % len(RETRIEVAL_QUERIES)]}"
+                f"（并发样本{level}-{wave}-{i}）"
                 for i in range(level)
             ]
             results = await asyncio.gather(
@@ -199,7 +207,7 @@ async def main() -> None:
             chapter_id = chapters[0]["id"]
 
         print("perf eval —", time.strftime("%Y-%m-%d %H:%M:%S"))
-        rows.append(await p1_retrieval(client, args.project_id))
+        rows.extend(await p1_retrieval(client, args.project_id))
         rows.extend(await p4_concurrency(client, args.project_id))
         rows.append(await p5_write_index(client, args.project_id))
         if not args.skip_llm:

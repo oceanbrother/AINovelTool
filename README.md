@@ -88,7 +88,8 @@ python scripts/seed_literary.py
 | --- | --- | --- |
 | 检索召回率 Recall@k / 平均块数 / 延迟 | `eval/run_retrieval_eval.py` | **Recall@6 = 1.000**（30 例标注集，16 项设定库，均延迟 256ms）|
 | Token/字数：全量塞 vs RAG 选择 | `eval/run_token_eval.py` | **上下文压缩 62.5%**（top-k 固定为 6；库越大压缩率越高）|
-| 生成性能：TTFT / 流式吞吐 / 并发 | `eval/run_perf_eval.py` | 检索 P95 161ms · SSE 首 token P50 3.1s · 61 events/s |
+| 生成性能：TTFT / 流式吞吐 / 并发 | `eval/run_perf_eval.py` | 检索 P95 180ms · SSE 首 token P50 3.1s · 61 events/s |
+| 并发优化：embedding 微批处理 + LRU 查询缓存 | `eval/run_perf_eval.py` | 10 并发 P95 **962→724ms**，劣化 5.8×→**3.3×**；缓存命中查询 **-67%**（150→50ms）|
 | 成语幻觉率（推荐词条不在权威词表的比例）| `eval/run_idiom_hallucination_eval.py` | **检索约束 0.0% vs 纯 LLM baseline 20.0%**（20 场景，成语库 ~1 万条，真值集 31k 词典 ∪ 库）|
 
 > 测试环境：Windows 11 / CPU 推理（bge-m3 本地）/ DeepSeek deepseek-chat / pgvector HNSW。
