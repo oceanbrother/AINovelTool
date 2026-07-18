@@ -177,20 +177,63 @@ function IdiomsPane() {
   );
 }
 
+const QUOTE_CATEGORIES = [
+  "诗歌", "戏剧", "散文", "志怪文学",
+  "爱情文学", "战争文学", "现实文学", "哲学", "成长文学",
+];
+
+const LIBRARIES = [
+  { value: "", label: "双库" },
+  { value: "素材", label: "素材库" },
+  { value: "金句", label: "金句库" },
+];
+
 function QuotesPane() {
-  const pane = usePane(async (q) => (await api.literaryQuotes(q)).quotes);
+  const [category, setCategory] = useState("");
+  const [library, setLibrary] = useState("");
+  const pane = usePane(
+    async (q) => (await api.literaryQuotes(q, category, library)).quotes
+  );
   return (
     <div className="pane">
       <AskForm pane={pane} placeholder="当前情节的主题，如：爱情与想象" action="引经" />
+      <div className="library-toggle" role="radiogroup" aria-label="选择检索库">
+        {LIBRARIES.map((l) => (
+          <button
+            key={l.value}
+            role="radio"
+            aria-checked={library === l.value}
+            className={library === l.value ? "active" : ""}
+            onClick={() => setLibrary(l.value)}
+          >
+            {l.label}
+          </button>
+        ))}
+      </div>
+      <select
+        className="category-filter"
+        value={category}
+        onChange={(e) => setCategory(e.target.value)}
+        aria-label="按分类过滤"
+      >
+        <option value="">全部分类</option>
+        {QUOTE_CATEGORIES.map((c) => (
+          <option key={c} value={c}>
+            {c}
+          </option>
+        ))}
+      </select>
       {pane.error && <p className="error">{pane.error}</p>}
       {pane.loading && <p className="loading">在文学库里检索…</p>}
       {pane.items && pane.items.length === 0 && (
-        <p className="empty">文学库还是空的。先运行 seed_literary.py 灌入数据。</p>
+        <p className="empty">这个分类下没有匹配的知识。换个分类或主题试试。</p>
       )}
       {pane.items?.map((qt, i) => (
         <div className="slip" key={i} style={{ "--slip-heat": Math.max(qt.score, 0.25) }}>
           <div className="slip-head">
-            <span className="slip-tag">{qt.knowledge_type}</span>
+            <span className="slip-tag">
+              {qt.category ? `${qt.category}·` : ""}{qt.knowledge_type}
+            </span>
             <span className="slip-score">{qt.score.toFixed(3)}</span>
           </div>
           <p className="slip-body">

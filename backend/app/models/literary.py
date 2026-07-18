@@ -22,6 +22,8 @@ class LiteraryWork(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     author: Mapped[str] = mapped_column(Text, nullable=False)
     era: Mapped[str | None] = mapped_column(Text)
+    # 体裁/主题分类：诗歌/戏剧/散文/志怪文学；小说按主题：爱情/战争/现实/哲学/成长文学
+    category: Mapped[str | None] = mapped_column(Text)
     is_public_domain: Mapped[bool] = mapped_column(Boolean, default=True)
     themes: Mapped[list] = mapped_column(JSONB, default=list)
     school: Mapped[str | None] = mapped_column(Text)

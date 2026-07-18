@@ -39,7 +39,12 @@ export const api = {
     }),
 
   suggestIdioms: (scene) => json("POST", "/idioms/suggest", { scene }),
-  literaryQuotes: (query) => json("POST", "/literary/quotes", { query }),
+  literaryQuotes: (query, category, library) =>
+    json("POST", "/literary/quotes", {
+      query,
+      category: category || null,
+      library: library || null,
+    }),
 };
 
 // POST-based SSE: EventSource only supports GET, so parse the stream manually.
