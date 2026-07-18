@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import (
     chapters,
     characters,
+    foreshadowing,
     generate,
     idioms,
     literary,
@@ -34,6 +35,7 @@ app.include_router(projects.router)
 app.include_router(characters.router)
 app.include_router(world.router)
 app.include_router(chapters.router)
+app.include_router(foreshadowing.router)
 app.include_router(retrieval.router)
 app.include_router(generate.router)
 # v1.1 multi-source retrieval features

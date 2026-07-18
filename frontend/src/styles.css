@@ -399,6 +399,33 @@ input, textarea, select {
 }
 .slip .slip-body strong { color: var(--paper); font-weight: 600; }
 
+/* foreshadowing threads */
+.thread-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.thread-form input,
+.thread-form textarea {
+  background: var(--night-2);
+  border: 1px solid var(--night-3);
+  border-radius: 4px;
+  padding: 7px 10px;
+  color: var(--paper);
+  resize: vertical;
+}
+.thread-form input::placeholder,
+.thread-form textarea::placeholder { color: var(--mist-dim); }
+.thread-form .btn { align-self: flex-end; padding: 6px 14px; }
+
+.thread-actions { display: flex; gap: 10px; }
+.thread-actions button {
+  font-size: 12px;
+  color: var(--mist-dim);
+}
+.thread-actions button:hover { color: var(--cinnabar); }
+
 /* breakthrough branch cards */
 .branch {
   background: var(--night-2);

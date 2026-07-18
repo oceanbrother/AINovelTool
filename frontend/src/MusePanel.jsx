@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "./api.js";
 
 const TABS = [
@@ -6,6 +6,7 @@ const TABS = [
   { key: "branches", label: "破壁" },
   { key: "idioms", label: "找词" },
   { key: "quotes", label: "引经" },
+  { key: "threads", label: "伏笔" },
 ];
 
 export default function MusePanel({ projectId, chapter }) {
@@ -29,6 +30,7 @@ export default function MusePanel({ projectId, chapter }) {
       {tab === "branches" && <BranchesPane projectId={projectId} chapter={chapter} />}
       {tab === "idioms" && <IdiomsPane />}
       {tab === "quotes" && <QuotesPane />}
+      {tab === "threads" && <ThreadsPane projectId={projectId} chapter={chapter} />}
     </aside>
   );
 }
@@ -187,6 +189,115 @@ const LIBRARIES = [
   { value: "素材", label: "素材库" },
   { value: "金句", label: "金句库" },
 ];
+
+function ThreadsPane({ projectId, chapter }) {
+  const [threads, setThreads] = useState(null);
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [error, setError] = useState(null);
+
+  const reload = async () => {
+    try {
+      setThreads(await api.listForeshadowing(projectId));
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+  useEffect(() => {
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  const add = async (e) => {
+    e.preventDefault();
+    if (!title.trim()) return;
+    setError(null);
+    try {
+      await api.createForeshadowing(projectId, {
+        title: title.trim(),
+        content: content.trim() || null,
+        setup_chapter_id: chapter?.id ?? null, // 埋在当前章
+      });
+      setTitle("");
+      setContent("");
+      await reload();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const toggle = async (t) => {
+    // 回收时记录当前章节；重新翻开则清掉回收章
+    const patch =
+      t.status === "open"
+        ? { status: "closed", payoff_chapter_id: chapter?.id ?? null }
+        : { status: "open", payoff_chapter_id: null };
+    await api.updateForeshadowing(projectId, t.id, patch);
+    await reload();
+  };
+
+  const remove = async (t) => {
+    await api.deleteForeshadowing(projectId, t.id);
+    await reload();
+  };
+
+  return (
+    <div className="pane">
+      <form className="thread-form" onSubmit={add}>
+        <input
+          value={title}
+          placeholder="伏笔标题，如：老周留下的铭文"
+          onChange={(e) => setTitle(e.target.value)}
+        />
+        <textarea
+          value={content}
+          rows={2}
+          placeholder="细节（可选）：埋了什么、暗示什么"
+          onChange={(e) => setContent(e.target.value)}
+        />
+        <button className="btn primary" type="submit">
+          埋下伏笔
+        </button>
+      </form>
+      {error && <p className="error">{error}</p>}
+      {threads && threads.length === 0 && (
+        <p className="empty">
+          还没有伏笔。
+          <br />
+          埋下的伏笔会进入检索库，续写时自动被想起。
+        </p>
+      )}
+      {threads?.map((t) => (
+        <div
+          className="slip"
+          key={t.id}
+          style={{ "--slip-heat": t.status === "open" ? 1 : 0.3 }}
+        >
+          <div className="slip-head">
+            <span className="slip-tag">
+              {t.status === "open" ? "未回收" : "已回收"}
+            </span>
+            <span className="thread-actions">
+              <button onClick={() => toggle(t)}>
+                {t.status === "open" ? "回收" : "重新翻开"}
+              </button>
+              <button onClick={() => remove(t)}>删除</button>
+            </span>
+          </div>
+          <p className="slip-body">
+            <strong>{t.title}</strong>
+            {t.content && (
+              <>
+                <br />
+                {t.content}
+              </>
+            )}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function QuotesPane() {
   const [category, setCategory] = useState("");

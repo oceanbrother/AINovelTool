@@ -28,6 +28,14 @@ export const api = {
   listWorld: (pid) => json("GET", `/projects/${pid}/world`),
   createWorld: (pid, payload) => json("POST", `/projects/${pid}/world`, payload),
 
+  listForeshadowing: (pid) => json("GET", `/projects/${pid}/foreshadowing`),
+  createForeshadowing: (pid, payload) =>
+    json("POST", `/projects/${pid}/foreshadowing`, payload),
+  updateForeshadowing: (pid, fid, payload) =>
+    json("PATCH", `/projects/${pid}/foreshadowing/${fid}`, payload),
+  deleteForeshadowing: (pid, fid) =>
+    json("DELETE", `/projects/${pid}/foreshadowing/${fid}`),
+
   retrieve: (pid, query, topK = 5) =>
     json("POST", `/projects/${pid}/retrieve`, { query, top_k: topK }),
 
