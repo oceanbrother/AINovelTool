@@ -78,7 +78,39 @@ function Gate({ onCreate }) {
 function Workspace({ projectId }) {
   const [chapters, setChapters] = useState([]);
   const [chapterId, setChapterId] = useState(null);
+  // resizable three-pane layout: the paper shouldn't monopolise the stage
+  const [railW, setRailW] = useState(200);
+  const [museW, setMuseW] = useState(380);
+  const [rev, setRev] = useState(0); // bumps to remount Editor after external append
   const chapter = chapters.find((c) => c.id === chapterId) || null;
+
+  const dragStart = (side) => (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = side === "rail" ? railW : museW;
+    const onMove = (ev) => {
+      const delta = ev.clientX - startX;
+      if (side === "rail") {
+        setRailW(Math.min(420, Math.max(140, startW + delta)));
+      } else {
+        setMuseW(Math.min(720, Math.max(260, startW - delta)));
+      }
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  const appendToChapter = async (text) => {
+    if (!chapter) return;
+    const merged = chapter.content ? `${chapter.content}\n${text}` : text;
+    await api.updateChapter(projectId, chapter.id, { content: merged });
+    patchChapter(chapter.id, { content: merged });
+    setRev((r) => r + 1); // remount Editor so it picks up the merged text
+  };
 
   useEffect(() => {
     api.listChapters(projectId).then((rows) => {
@@ -102,7 +134,12 @@ function Workspace({ projectId }) {
     setChapters((chs) => chs.map((c) => (c.id === cid ? { ...c, ...patch } : c)));
 
   return (
-    <div className="workspace">
+    <div
+      className="workspace"
+      style={{
+        gridTemplateColumns: `${railW}px 5px minmax(0, 1fr) 5px ${museW}px`,
+      }}
+    >
       <nav className="rail">
         <div className="rail-head">
           <h2>章节</h2>
@@ -127,9 +164,16 @@ function Workspace({ projectId }) {
         )}
       </nav>
 
+      <div
+        className="splitter"
+        role="separator"
+        aria-label="调整章节栏宽度"
+        onPointerDown={dragStart("rail")}
+      />
+
       {chapter ? (
         <Editor
-          key={chapter.id}
+          key={`${chapter.id}:${rev}`}
           projectId={projectId}
           chapter={chapter}
           onLocalChange={patchChapter}
@@ -145,7 +189,14 @@ function Workspace({ projectId }) {
         </div>
       )}
 
-      <MusePanel projectId={projectId} chapter={chapter} />
+      <div
+        className="splitter"
+        role="separator"
+        aria-label="调整侧栏宽度"
+        onPointerDown={dragStart("muse")}
+      />
+
+      <MusePanel projectId={projectId} chapter={chapter} onAppend={appendToChapter} />
     </div>
   );
 }
