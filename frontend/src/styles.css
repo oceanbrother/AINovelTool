@@ -218,6 +218,30 @@ input, textarea, select {
   color: var(--ink);
   white-space: pre-wrap;
 }
+.paper .streaming .clue-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 10px;
+  font-family: var(--sans);
+  line-height: 1.4;
+}
+.paper .streaming .clue-strip-label {
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--cinnabar);
+}
+.paper .streaming .clue-chip {
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: rgba(38, 40, 44, 0.06);
+  border-left: 2px solid var(--cinnabar);
+  border-radius: 2px;
+  padding: 2px 8px;
+  cursor: default;
+}
+
 .paper .streaming .cursor {
   display: inline-block;
   width: 3px;

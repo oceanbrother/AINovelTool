@@ -48,8 +48,9 @@ export const api = {
 };
 
 // POST-based SSE: EventSource only supports GET, so parse the stream manually.
-// Calls onToken(text) per token; resolves when the server sends `done`.
-export async function streamContinue(pid, chapterId, instruction, onToken, signal) {
+// Calls onClues(chunks) once retrieval lands (before the first LLM token) and
+// onToken(text) per token; resolves when the server sends `done`.
+export async function streamContinue(pid, chapterId, instruction, onToken, signal, onClues) {
   const resp = await fetch(`/projects/${pid}/generate/continue`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -77,6 +78,7 @@ export async function streamContinue(pid, chapterId, instruction, onToken, signa
       } else if (line.startsWith("data:")) {
         const data = line.slice(5).replace(/^ /, "");
         if (event === "token") onToken(data);
+        else if (event === "clues" && onClues) onClues(JSON.parse(data));
         else if (event === "error") throw new Error(data);
         else if (event === "done") return;
       }
