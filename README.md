@@ -1,4 +1,6 @@
-# AI 小说协作助手 · AINovelTool
+# 乌鸦像写字台 · AINovelTool
+
+**中文** | [English](README.en.md)
 
 > 一个面向**都市幻想长篇小说**的 AI 协作助手。通过
 > "设定库 → RAG 检索 → 上下文组装 → AI 生成 → 滚动摘要回写" 的闭环，解决**卡文**与
@@ -9,7 +11,40 @@
 许可证：**MIT**。本项目从零自建，仅借鉴开源项目
 [MuMuAINovel](https://github.com/xiamuceer-j/MuMuAINovel) 的功能思路与架构理念，**未复制其源代码**。
 
+![乌鸦像写字台 — 写作界面](docs/img/writing-desk.png)
+
+*夜色外框 + 稿纸编辑区 + 灵感侧栏（线索 / 破壁 / 找词 / 引经 / 伏笔）。正文由 SSE 流式生成，
+角色口癖、地点、规则全部来自检索命中的设定库。*
+
 ---
+
+## 核心数字
+
+| 指标 | 结果 |
+| --- | --- |
+| 成语推荐幻觉率（A/B 对照） | **检索约束 0.0% vs 纯 LLM 20.0%** |
+| 检索召回率 | **Recall@6 = 1.000**（30 例标注集） |
+| RAG 上下文压缩 | **62.5%**（vs 全量塞 prompt） |
+| 10 并发检索 P95 | **962→724ms**，劣化 5.8×→**3.3×**（微批处理 + LRU 缓存） |
+| 检索延迟 / SSE 吞吐 | P95 180ms / 61 events/s |
+| 感知等待优化 | 检索线索 ~0.8s 先亮，早于首 token 2.6~3.3s |
+
+## 架构
+
+```mermaid
+flowchart LR
+    subgraph 检索底座["embedding(bge-m3) + pgvector"]
+        S[设定库<br/>角色/世界观/伏笔]
+        L[文学库<br/>素材库+金句库]
+        I[成语库<br/>~1万条]
+    end
+    W[写作界面<br/>React + SSE] -->|场景/画面/主题| R{多源检索}
+    R --> S & L & I
+    R -->|top-k 相关块| C[上下文组装<br/>滚动摘要+近期正文+检索块]
+    C --> G[LLM 生成<br/>OpenAI 兼容 provider]
+    G -->|SSE: clues → tokens| W
+    G -->|摘要回写| C
+```
 
 ## 为什么是这个设计
 
@@ -22,34 +57,33 @@
 
 ## 核心闭环与两种生成模式
 
-```
-设定库 → 向量检索(RAG) → 上下文组装 → AI 生成 → 滚动摘要回写
-```
-
 | 模式 | 解决痛点 | 说明 |
 | --- | --- | --- |
-| **续写模式** | 写得慢 | 基于当前章节 + 自动检索到的相关设定，SSE 流式续写下一段 |
-| **破壁模式** | 卡文 | 给定剧情状态，一次生成 N 个走向不同的后续分支 |
+| **续写模式** | 写得慢 | 当前章节 + 检索到的设定，SSE 流式续写；检索线索先亮（~0.8s），正文随后流入 |
+| **破壁模式** | 卡文 | 给定剧情状态，一次生成 N 个走向不同的分支卡，响应携带检索依据 |
 
-## v1.1 多源检索亮点
+配套：**伏笔管理**（埋设章/回收章全程跟踪，未回收伏笔自动进入检索，续写时被"想起"）、
+**滚动摘要**（控制长篇上下文）。
 
-- **文学引用库（Feature A）**：让角色像有文化的人一样**引用、谈论真实文学**。分为两个子库：
-  **金句库**（原文名句，仅公有领域作品，且译文须译者也过保护期）与**素材库**（写作背景 /
-  主题解读 / 内容概括等事实性知识，可含版权期内作品——事实不受版权保护，作者可引用其
-  情节制造氛围，系统结构上无法输出其原文）。双重守卫：入库时强制 + 检索时兜底，从源头
-  杜绝侵权与幻觉。作品另按体裁/主题分类（诗歌/戏剧/散文/志怪 + 爱情/战争/现实/哲学/成长文学）。
-- **成语推荐（Feature B）**：输入画面描述，**向量召回候选成语**，再由 LLM 从**召回列表内**
-  精选并解释 —— LLM 不能凭空编造不存在的成语。
+## v1.1 多源检索
+
+- **文学引用库**：让角色像有文化的人一样引用、谈论真实文学。分两个子库——
+  **金句库**（原文名句，仅公有领域作品，译文须译者也过保护期）与**素材库**（写作背景 /
+  主题解读 / 内容概括等事实性知识，可含版权期内作品：事实不受版权保护，作者可引用其情节
+  制造氛围，系统结构上无法输出其原文）。双重守卫：入库时强制 + 检索 SQL 兜底。
+  作品按体裁/主题分类（诗歌/戏剧/散文/志怪 + 爱情/战争/现实/哲学/成长文学）。
+- **成语推荐**：画面描述 → 向量召回候选 → LLM 仅从召回列表内精选并解释，
+  不可能编造不存在的成语（A/B 实测 0.0% vs 20.0%）。
 
 ## 技术栈
 
 | 层 | 选型 | 理由 |
 | --- | --- | --- |
-| 后端 | FastAPI | 异步、生成用 **SSE 流式输出** |
-| 数据库 | PostgreSQL + pgvector | 一个库同时承载关系数据与向量检索，省去独立向量库的同步 |
-| Embedding | bge-m3 / bge-small-zh | 中文小说语义检索效果优于多语 MiniLM（可切换 local / API 后端）|
-| LLM | OpenAI 兼容接口 + provider 抽象层 | 可换模型 |
-| 前端 | React（从简，后置）| 当前可直接用 Swagger UI 操作全部接口 |
+| 后端 | FastAPI | 异步、SSE 流式输出 |
+| 数据库 | PostgreSQL + pgvector | 一个库承载关系数据与向量检索，免去独立向量库同步 |
+| Embedding | bge-m3（本地）/ OpenAI 兼容 API | 中文语义检索优于多语 MiniLM；微批处理 + LRU 缓存解决 CPU 并发瓶颈 |
+| LLM | OpenAI 兼容 provider 抽象 | 默认 DeepSeek，可切任意兼容服务 |
+| 前端 | React + Vite，手写 CSS | 「乌鸦像写字台」：夜墨外框 + 冷调稿纸 + 朱砂批注红 |
 
 ## 快速开始
 
@@ -64,59 +98,37 @@ docker compose up --build
 ### 方式二：本地
 
 ```bash
-# 1. 起一个带 pgvector 的 Postgres，并执行建表脚本
+# 1. 起一个带 pgvector 的 Postgres（宿主机端口 5433），执行建表脚本
 psql "$DATABASE_URL" -f backend/scripts/init_pgvector.sql
 
-# 2. 安装依赖并启动
+# 2. 后端
 cd backend
 python -m venv .venv && source .venv/Scripts/activate   # Windows Git Bash
 pip install -r requirements.txt
 cp .env.example .env                                     # 填写配置
 uvicorn app.main:app --reload
 
-# 3. （可选）灌入 v1.1 示例数据
-python scripts/seed_idioms.py
+# 3. 种子数据（成语 ~1 万条需先下载 chinese-xinhua 的 idiom.json）
 python scripts/seed_literary.py
+python scripts/import_idioms.py --source path/to/idiom.json
+
+# 4. 前端
+cd ../frontend && npm install && npm run dev   # http://localhost:5173
 ```
 
 ## 评测（eval harness）
 
-项目自带可复现的小型评测，用数据说话而非只调 API。详见
-[backend/eval/README.md](backend/eval/README.md)。
+所有数字可复现，详见 [backend/eval/README.md](backend/eval/README.md)。
 
 | 指标 | 脚本 | 实测结果 |
 | --- | --- | --- |
-| 检索召回率 Recall@k / 平均块数 / 延迟 | `eval/run_retrieval_eval.py` | **Recall@6 = 1.000**（30 例标注集，16 项设定库，均延迟 256ms）|
-| Token/字数：全量塞 vs RAG 选择 | `eval/run_token_eval.py` | **上下文压缩 62.5%**（top-k 固定为 6；库越大压缩率越高）|
-| 生成性能：TTFT / 流式吞吐 / 并发 | `eval/run_perf_eval.py` | 检索 P95 180ms · SSE 首 token P50 3.1s · 61 events/s |
-| 并发优化：embedding 微批处理 + LRU 查询缓存 | `eval/run_perf_eval.py` | 10 并发 P95 **962→724ms**，劣化 5.8×→**3.3×**；缓存命中查询 **-67%**（150→50ms）|
-| 成语幻觉率（推荐词条不在权威词表的比例）| `eval/run_idiom_hallucination_eval.py` | **检索约束 0.0% vs 纯 LLM baseline 20.0%**（20 场景，成语库 ~1 万条，真值集 31k 词典 ∪ 库）|
+| 检索召回率 | `eval/run_retrieval_eval.py` | **Recall@6 = 1.000**（30 例标注集，均延迟 256ms）|
+| Token 压缩 | `eval/run_token_eval.py` | **62.5%**（top-k=6 固定；库越大压缩率越高）|
+| 生成性能 | `eval/run_perf_eval.py` | 冷查询 P95 180ms · 缓存命中 ~50ms · 首 token P50 3.1s · 61 events/s |
+| 并发优化前后 | `eval/run_perf_eval.py` | 10 并发 P95 962→724ms，劣化 5.8×→3.3× |
+| 成语幻觉率 A/B | `eval/run_idiom_hallucination_eval.py` | **0.0% vs 20.0%**（20 场景，真值集 = 31k 词典 ∪ 精选库）|
 
-> 测试环境：Windows 11 / CPU 推理（bge-m3 本地）/ DeepSeek deepseek-chat / pgvector HNSW。
-> 标注集：[eval/datasets/retrieval_recall.v1.json](backend/eval/datasets/retrieval_recall.v1.json)，
-> 设定库种子：[eval/seed_eval_settings.py](backend/eval/seed_eval_settings.py)，可一键复现。
-
-## 目录结构
-
-```
-AINovelTool/
-├── backend/
-│   ├── app/
-│   │   ├── api/         # 路由：projects / characters / world / chapters / retrieve / generate / literary / idioms
-│   │   ├── models/      # SQLAlchemy 模型（含 pgvector 向量列）
-│   │   ├── schemas/     # Pydantic 请求/响应模型
-│   │   ├── services/    # 业务逻辑：retrieval / indexing / generation / summary / literary / idiom
-│   │   ├── core/        # 配置、LLM provider 抽象、embedding 抽象
-│   │   ├── db.py
-│   │   └── main.py
-│   ├── scripts/         # init_pgvector.sql + 种子数据
-│   ├── eval/            # eval harness + 标注数据
-│   └── requirements.txt
-├── frontend/            # 乌鸦像写字台 React 前端（Vite + SSE）
-├── docker-compose.yml   # postgres(pgvector) + api
-├── LICENSE              # MIT
-└── README.md
-```
+> 环境：Windows 11 / CPU 推理（bge-m3）/ DeepSeek deepseek-chat / pgvector HNSW。
 
 ## 数据模型（关键表）
 
@@ -124,18 +136,16 @@ AINovelTool/
 `foreshadowing` · `setting_chunks`(向量) · `rolling_summary` ·
 `literary_works` · `literary_knowledge`(向量) · `idioms`(向量)
 
-详见 [backend/scripts/init_pgvector.sql](backend/scripts/init_pgvector.sql)。
+建表 SQL：[backend/scripts/init_pgvector.sql](backend/scripts/init_pgvector.sql)。
 
 ## 路线图
 
-- [x] 设定库 CRUD + 建表
-- [x] embedding + pgvector 检索 + eval harness 骨架
-- [x] 生成（续写 + 破壁）+ 滚动摘要
-- [x] v1.1：文学引用库 + 成语推荐（复用检索底座）
-- [x] 薄前端（React + SSE 实时渲染，见 frontend/）
-- [x] 标注评测集（30 例）+ 召回率 / token 压缩 / 生成性能实测数字
-- [x] 成语库扩至 ~1 万条（chinese-xinhua, MIT）、文学库 15 部公有领域作品
-- [x] 幻觉拦截率 A/B：检索约束 0.0% vs 纯 LLM baseline 20.0%
+- [x] 核心闭环：设定库 CRUD → 检索 → 续写/破壁 → 滚动摘要
+- [x] v1.1 多源检索：文学引用（素材库/金句库）+ 成语推荐
+- [x] 前端「乌鸦像写字台」（React + SSE 实时渲染）
+- [x] eval harness：召回率 / token 压缩 / 生成性能 / 幻觉率 A/B 全部量化
+- [x] 并发瓶颈优化（微批处理 + 缓存）· 伏笔系统 · 检索线索先行
+- [ ] 文风模仿：文风样本入库检索，生成维持统一语感
 
 ---
 
