@@ -31,6 +31,7 @@ rules from retrieval hits — every detail has a source.*
 | 10-concurrent retrieval P95 | **962→724ms**, degradation 5.8×→**3.3×** (micro-batching + LRU cache) |
 | Retrieval latency / SSE throughput | P95 180ms / 61 events/s |
 | Perceived wait | retrieval clues light up at ~0.8s, 2.6–3.3s ahead of the first LLM token |
+| Style imitation blind eval | **7 wins / 1 tie / 0 losses** (n=8, counterbalanced LLM judge) |
 
 ## Architecture
 
@@ -65,7 +66,10 @@ cheaper, sharper. One `embedding + pgvector` base serves three retrieval sources
 | **Breakthrough** | writer's block | given the plot state, N divergent next-arc branches, with the retrieval evidence attached |
 
 Plus **foreshadowing tracking** (setup/payoff chapters; open threads enter retrieval so
-the generator "remembers" them) and a **rolling summary** to bound long-novel context.
+the generator "remembers" them), a **rolling summary** to bound long-novel context, and
+**style imitation** (style samples in the vector store; facts and voice retrieved on
+separate paths, samples injected adjacent to the generation point — borrow the voice,
+never the content).
 
 ## v1.1 multi-source retrieval
 
@@ -129,6 +133,7 @@ Every number above is reproducible — see [backend/eval/README.md](backend/eval
 | Token compression | `eval/run_token_eval.py` |
 | Generation performance (TTFT / throughput / concurrency) | `eval/run_perf_eval.py` |
 | Idiom hallucination A/B | `eval/run_idiom_hallucination_eval.py` |
+| Style imitation blind eval | `eval/run_style_eval.py` |
 
 > Environment: Windows 11 / CPU inference (bge-m3) / DeepSeek deepseek-chat / pgvector HNSW.
 
@@ -147,7 +152,7 @@ Schema: [backend/scripts/init_pgvector.sql](backend/scripts/init_pgvector.sql).
 - [x] "Raven writing desk" frontend (React + live SSE)
 - [x] Eval harness: recall / compression / performance / hallucination A/B, all quantified
 - [x] Concurrency fix (micro-batching + cache) · foreshadowing system · clues-first streaming
-- [ ] Style imitation: retrieve style samples to keep the generated prose in the author's voice
+- [x] Style imitation: sample store + dual-path retrieval injection, 7/8 blind-eval wins
 
 ---
 

@@ -25,8 +25,12 @@ from app.services import retrieval, summary
 _CONTINUE_SYSTEM = (
     "你是一位都市幻想小说的资深代笔作者。依据提供的【滚动摘要】【近期正文】和"
     "【检索到的设定】保持人物、世界观与伏笔一致，自然续写下一段正文。"
+    "若提供了【文风样本】，模仿其语感、节奏与用词习惯，但不得复述或改写样本内容。"
     "只输出小说正文，不要解说、不要标题。"
 )
+
+# fact sources for the settings block; style rides a separate retrieval path
+_FACT_SOURCES = ["character", "world", "foreshadowing"]
 
 _BREAKTHROUGH_SYSTEM = (
     "你是小说剧情策划。基于当前剧情状态，提出若干条【走向不同】的后续分支"
@@ -46,7 +50,19 @@ async def _build_context(
         settings.recent_chapters_window,
         before_order=chapter.order_index,
     )
-    chunks = await retrieval.retrieve_settings(db, chapter.project_id, query)
+    # two retrieval paths: facts for grounding, style samples for voice —
+    # separated so prose samples never crowd out the fact slots
+    chunks = await retrieval.retrieve_settings(
+        db, chapter.project_id, query, source_types=_FACT_SOURCES
+    )
+    styles = await retrieval.retrieve_settings(
+        db,
+        chapter.project_id,
+        query,
+        source_types=["style"],
+        top_k=2,
+        min_score=0.0,  # any sample beats none for voice consistency
+    )
     settings_block = retrieval.format_chunks_for_prompt(chunks)
     context = (
         f"【滚动摘要】\n{roll.content or '（暂无）'}\n\n"
@@ -54,6 +70,15 @@ async def _build_context(
         f"【检索到的设定】\n{settings_block}\n\n"
         f"【当前章节正文】{chapter.title or ''}\n{chapter.content}"
     )
+    if styles:
+        # placed LAST — adjacent to the generation point — so the voice
+        # instruction isn't diluted by the long context above it
+        style_block = "\n---\n".join(s.content for s in styles)
+        context += (
+            f"\n\n【文风样本】\n{style_block}\n\n"
+            "续写时严格模仿【文风样本】的句长与节奏（样本多短句则多用短句）、"
+            "标点密度与用词习惯；只借其语感，不得复述其内容。"
+        )
     return context, chunks
 
 

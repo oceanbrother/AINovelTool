@@ -17,6 +17,7 @@ from app.api import (
     literary,
     projects,
     retrieval,
+    style,
     world,
 )
 from app.core.config import settings
@@ -37,6 +38,7 @@ app.include_router(world.router)
 app.include_router(chapters.router)
 app.include_router(foreshadowing.router)
 app.include_router(retrieval.router)
+app.include_router(style.router)
 app.include_router(generate.router)
 # v1.1 multi-source retrieval features
 app.include_router(literary.router)
