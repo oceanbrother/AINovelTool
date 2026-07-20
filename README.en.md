@@ -32,6 +32,8 @@ rules from retrieval hits — every detail has a source.*
 | Retrieval latency / SSE throughput | P95 180ms / 61 events/s |
 | Perceived wait | retrieval clues light up at ~0.8s, 2.6–3.3s ahead of the first LLM token |
 | Style imitation blind eval | **7 wins / 1 tie / 0 losses** (n=8, counterbalanced LLM judge) |
+| Imitation self-check loop | judge feedback lifts style **2→6** in one rewrite; plagiarism gate at 0.0 overlap |
+| Judge calibration | real-vs-imitation blind discrimination **5/6** — the judge's verdicts carry weight |
 
 ## Architecture
 
@@ -134,6 +136,7 @@ Every number above is reproducible — see [backend/eval/README.md](backend/eval
 | Generation performance (TTFT / throughput / concurrency) | `eval/run_perf_eval.py` |
 | Idiom hallucination A/B | `eval/run_idiom_hallucination_eval.py` |
 | Style imitation blind eval | `eval/run_style_eval.py` |
+| Judge calibration (real vs imitation) | `eval/run_judge_calibration.py` |
 
 > Environment: Windows 11 / CPU inference (bge-m3) / DeepSeek deepseek-chat / pgvector HNSW.
 
@@ -153,6 +156,9 @@ Schema: [backend/scripts/init_pgvector.sql](backend/scripts/init_pgvector.sql).
 - [x] Eval harness: recall / compression / performance / hallucination A/B, all quantified
 - [x] Concurrency fix (micro-batching + cache) · foreshadowing system · clues-first streaming
 - [x] Style imitation: sample store + dual-path retrieval injection, 7/8 blind-eval wins
+- [x] Private style pipeline: epub ingestion (source data never enters the repo) +
+      imitation self-check loop (cross-model judge, AI-flavor scoring, n-gram
+      plagiarism gate, feedback rewrite) + judge calibration 5/6
 
 ---
 

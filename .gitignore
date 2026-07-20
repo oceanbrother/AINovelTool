@@ -35,3 +35,12 @@ Thumbs.db
 # Eval outputs
 eval/results/
 *.log
+
+# Private style-source material — copyrighted texts stay on this machine only.
+# The style library is user-private data; NOTHING derived from copyrighted
+# sources (chunks, exports, dumps) may ever enter the repo.
+*.epub
+*.mobi
+*.azw3
+style_data/
+style_export*

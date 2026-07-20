@@ -12,8 +12,10 @@ from app.schemas.generation import (
     BreakthroughRequest,
     BreakthroughResponse,
     ContinueRequest,
+    ImitateRequest,
+    ImitateResponse,
 )
-from app.services import generation
+from app.services import generation, imitation
 
 router = APIRouter(prefix="/projects/{project_id}/generate", tags=["generate"])
 
@@ -60,6 +62,30 @@ async def continue_writing(project_id: int, payload: ContinueRequest):
                 yield {"event": "error", "data": str(exc)}
 
     return EventSourceResponse(event_stream())
+
+
+@router.post("/imitate", response_model=ImitateResponse)
+async def imitate(
+    project_id: int,
+    payload: ImitateRequest,
+    db: AsyncSession = Depends(get_session),
+):
+    """仿写模式 — generate → self-check (judge + plagiarism gate) → rewrite.
+
+    Non-streaming by design: every draft the author sees has already passed
+    (or best-of-failed) the self-check loop. Slower than 续写, but vetted."""
+    chapter = await db.get(Chapter, payload.chapter_id)
+    if chapter is None or chapter.project_id != project_id:
+        raise HTTPException(404, "chapter not found")
+    text, attempts, clues = await imitation.imitate(
+        db,
+        chapter,
+        payload.instruction,
+        payload.previous_draft,
+        payload.feedback,
+        payload.max_attempts,
+    )
+    return ImitateResponse(text=text, attempts=attempts, clues=clues)
 
 
 @router.post("/breakthrough", response_model=BreakthroughResponse)

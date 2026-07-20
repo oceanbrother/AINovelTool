@@ -40,9 +40,25 @@ _BREAKTHROUGH_SYSTEM = (
 )
 
 
+async def build_imitation_context(
+    db: AsyncSession, chapter: Chapter, query: str
+) -> tuple[str, list, list]:
+    """Like _build_context but also returns the style chunks, so the
+    imitation self-check loop can run its plagiarism/style gates on them."""
+    context, chunks, styles = await _build_context_full(db, chapter, query)
+    return context, chunks, styles
+
+
 async def _build_context(
     db: AsyncSession, chapter: Chapter, query: str
 ) -> tuple[str, list]:
+    context, chunks, _styles = await _build_context_full(db, chapter, query)
+    return context, chunks
+
+
+async def _build_context_full(
+    db: AsyncSession, chapter: Chapter, query: str
+) -> tuple[str, list, list]:
     roll = await summary.get_or_create_summary(db, chapter.project_id)
     recent = await summary.recent_chapters_text(
         db,
@@ -79,7 +95,7 @@ async def _build_context(
             "续写时严格模仿【文风样本】的句长与节奏（样本多短句则多用短句）、"
             "标点密度与用词习惯；只借其语感，不得复述其内容。"
         )
-    return context, chunks
+    return context, chunks, styles
 
 
 async def continue_chapter_stream(

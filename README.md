@@ -29,6 +29,8 @@
 | 检索延迟 / SSE 吞吐 | P95 180ms / 61 events/s |
 | 感知等待优化 | 检索线索 ~0.8s 先亮，早于首 token 2.6~3.3s |
 | 文风模仿盲评 | **7 胜 1 平 0 负**（n=8，LLM 裁判正反双序一致才计胜） |
+| 仿写自检环 | 裁判反馈一轮迭代 style **2→6**；复述门 n-gram 重叠 0.0 |
+| 裁判校准 | 真原文 vs 仿写盲测分辨率 **5/6**——裁判判断可信 |
 
 ## 架构
 
@@ -130,6 +132,7 @@ cd ../frontend && npm install && npm run dev   # http://localhost:5173
 | 并发优化前后 | `eval/run_perf_eval.py` | 10 并发 P95 962→724ms，劣化 5.8×→3.3× |
 | 成语幻觉率 A/B | `eval/run_idiom_hallucination_eval.py` | **0.0% vs 20.0%**（20 场景，真值集 = 31k 词典 ∪ 精选库）|
 | 文风模仿盲评 | `eval/run_style_eval.py` | 带样本 vs 无样本 **7 胜 1 平 0 负**（n=8，裁判正反双序一致才计胜，消除位置偏差）|
+| 裁判校准 | `eval/run_judge_calibration.py` | 真原文 vs 仿写盲测，裁判分辨率 **5/6**（裁判可信的前提验证）|
 
 > 环境：Windows 11 / CPU 推理（bge-m3）/ DeepSeek deepseek-chat / pgvector HNSW。
 
@@ -149,6 +152,8 @@ cd ../frontend && npm install && npm run dev   # http://localhost:5173
 - [x] eval harness：召回率 / token 压缩 / 生成性能 / 幻觉率 A/B 全部量化
 - [x] 并发瓶颈优化（微批处理 + 缓存）· 伏笔系统 · 检索线索先行
 - [x] 文风模仿：样本入库 + 双路检索注入，盲评 7/8 胜出
+- [x] 私有文风管线：epub 摄取（数据永不入库房）+ 仿写自检环
+      （异模型裁判 + AI 味评分 + n-gram 复述门 + 反馈重写）+ 裁判校准 5/6
 
 ---
 
