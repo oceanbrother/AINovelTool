@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from app.schemas.retrieval import RetrievedChunk
+
 
 class ContinueRequest(BaseModel):
     """续写模式 — solve the 'stuck' / slow-writing pain.
@@ -36,3 +38,6 @@ class BranchIdea(BaseModel):
 
 class BreakthroughResponse(BaseModel):
     branches: list[BranchIdea]
+    # the retrieval evidence the branches were grounded in — the UI can show
+    # these alongside the cards (同「续写」的 clues 事件)
+    clues: list[RetrievedChunk] = []

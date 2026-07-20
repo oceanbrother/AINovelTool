@@ -156,6 +156,7 @@ function Editor({ projectId, chapter, onLocalChange }) {
   const [saveState, setSaveState] = useState("已保存");
   const [instruction, setInstruction] = useState("");
   const [streamText, setStreamText] = useState(null); // null = not streaming
+  const [streamClues, setStreamClues] = useState(null); // retrieval evidence
   const [busy, setBusy] = useState(false);
   const abortRef = useRef(null);
   const saveTimer = useRef(null);
@@ -189,6 +190,7 @@ function Editor({ projectId, chapter, onLocalChange }) {
   const startContinue = async () => {
     setBusy(true);
     setStreamText("");
+    setStreamClues(null);
     abortRef.current = new AbortController();
     let acc = "";
     try {
@@ -200,7 +202,8 @@ function Editor({ projectId, chapter, onLocalChange }) {
           acc += tok;
           setStreamText(acc);
         },
-        abortRef.current.signal
+        abortRef.current.signal,
+        (clues) => setStreamClues(clues) // lights up before the first token
       );
     } catch (err) {
       if (err.name !== "AbortError") {
@@ -215,12 +218,14 @@ function Editor({ projectId, chapter, onLocalChange }) {
     const merged = content ? `${content}\n${streamText}` : streamText;
     setContent(merged);
     setStreamText(null);
+    setStreamClues(null);
     scheduleSave(title, merged);
   };
 
   const discardStream = () => {
     abortRef.current?.abort();
     setStreamText(null);
+    setStreamClues(null);
   };
 
   return (
@@ -247,6 +252,18 @@ function Editor({ projectId, chapter, onLocalChange }) {
         />
         {streamText !== null && (
           <div className="streaming" ref={streamRef} aria-live="polite">
+            {streamClues && (
+              <div className="clue-strip" aria-label="本次续写依据的设定">
+                <span className="clue-strip-label">
+                  {busy && !streamText ? "已想起…" : "写作依据"}
+                </span>
+                {streamClues.map((c, i) => (
+                  <span className="clue-chip" key={i} title={c.content}>
+                    {c.content.slice(0, 14)}
+                  </span>
+                ))}
+              </div>
+            )}
             {streamText}
             {busy && <span className="cursor" />}
           </div>

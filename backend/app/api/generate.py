@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
@@ -31,10 +33,28 @@ async def continue_writing(project_id: int, payload: ContinueRequest):
                 yield {"event": "error", "data": "chapter not found"}
                 return
             try:
-                async for delta in generation.continue_chapter_stream(
+                async for kind, data in generation.continue_chapter_stream(
                     db, chapter, payload.instruction
                 ):
-                    yield {"event": "token", "data": delta}
+                    if kind == "clues":
+                        # retrieval evidence, sent while the first LLM token is
+                        # still in flight — the UI lights these up immediately
+                        yield {
+                            "event": "clues",
+                            "data": json.dumps(
+                                [
+                                    {
+                                        "source_type": c.source_type,
+                                        "content": c.content,
+                                        "score": c.score,
+                                    }
+                                    for c in data
+                                ],
+                                ensure_ascii=False,
+                            ),
+                        }
+                    else:
+                        yield {"event": "token", "data": data}
                 yield {"event": "done", "data": ""}
             except Exception as exc:  # surface upstream errors to the client
                 yield {"event": "error", "data": str(exc)}
@@ -52,7 +72,7 @@ async def breakthrough(
     chapter = await db.get(Chapter, payload.chapter_id)
     if chapter is None or chapter.project_id != project_id:
         raise HTTPException(404, "chapter not found")
-    branches = await generation.breakthrough(
+    branches, clues = await generation.breakthrough(
         db, chapter, payload.state, payload.num_branches
     )
-    return BreakthroughResponse(branches=branches)
+    return BreakthroughResponse(branches=branches, clues=clues)

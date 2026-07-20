@@ -59,10 +59,17 @@ async def _build_context(
 
 async def continue_chapter_stream(
     db: AsyncSession, chapter: Chapter, instruction: str | None
-) -> AsyncGenerator[str, None]:
-    """Stream the continuation. Query for retrieval = chapter tail + instruction."""
+) -> AsyncGenerator[tuple[str, object], None]:
+    """Stream the continuation as typed events.
+
+    Yields ("clues", chunks) as soon as retrieval finishes — the UI can light
+    up the grounding evidence while the LLM's first token is still in flight
+    (~3s on DeepSeek) — then ("token", delta) for each streamed piece.
+    Query for retrieval = chapter tail + instruction.
+    """
     query = (chapter.content[-500:] + " " + (instruction or "")).strip()
-    context, _chunks = await _build_context(db, chapter, query or chapter.title or "")
+    context, chunks = await _build_context(db, chapter, query or chapter.title or "")
+    yield "clues", chunks
     user = context
     if instruction:
         user += f"\n\n【方向指引】{instruction}"
@@ -71,13 +78,15 @@ async def continue_chapter_stream(
         {"role": "user", "content": user},
     ]
     async for delta in llm.stream_complete(messages):
-        yield delta
+        yield "token", delta
 
 
 async def breakthrough(
     db: AsyncSession, chapter: Chapter, state: str, num_branches: int
-) -> list[BranchIdea]:
-    context, _chunks = await _build_context(db, chapter, state)
+) -> tuple[list[BranchIdea], list]:
+    """Returns (branches, clues) — clues are the retrieved chunks the branches
+    were grounded in, so the UI can surface the evidence next to the cards."""
+    context, chunks = await _build_context(db, chapter, state)
     messages = [
         {"role": "system", "content": _BREAKTHROUGH_SYSTEM},
         {
@@ -89,7 +98,7 @@ async def breakthrough(
         },
     ]
     raw = await llm.complete(messages, temperature=0.9)
-    return _parse_branches(raw)
+    return _parse_branches(raw), chunks
 
 
 def _parse_branches(raw: str) -> list[BranchIdea]:
