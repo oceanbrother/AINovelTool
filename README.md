@@ -99,11 +99,11 @@ docker compose up --build
 # 数据库 schema 首次启动自动执行；API 在 http://localhost:8000/docs
 ```
 
-### 方式二：本地（推荐日常开发：`.dev.ps1` 一键三终端）
+### 方式二：本地（推荐日常开发：`.\dev.ps1` 一键三终端）
 
 ```powershell
 # 手动启动 Docker Desktop 后：
-.dev.ps1   # 自动检查 Docker，分三个终端拉起 数据库/后端/前端
+.\dev.ps1   # 自动检查 Docker，分三个终端拉起 数据库/后端/前端
 ```
 
 或手动逐个启动：
