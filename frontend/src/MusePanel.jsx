@@ -72,7 +72,7 @@ export default function MusePanel({ projectId, chapter, onAppend }) {
           </button>
         ))}
       </div>
-      {tabKey === "clues" && <CluesPane projectId={projectId} />}
+      {tabKey === "clues" && <CluesPane projectId={projectId} chapter={chapter} />}
       {tabKey === "ingest" && <IngestPane projectId={projectId} />}
       {tabKey === "settings" && <SettingsPane projectId={projectId} />}
       {tabKey === "threads" && <ThreadsPane projectId={projectId} chapter={chapter} />}
@@ -137,30 +137,116 @@ const SOURCE_LABEL = {
 
 /* ---------- 架构 ---------- */
 
-function CluesPane({ projectId }) {
-  const pane = usePane(async (q) => (await api.retrieve(projectId, q)).chunks);
+function CluesPane({ projectId, chapter }) {
+  const [fragment, setFragment] = useState("");
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const run = async () => {
+    if (fragment.trim().length < 10) {
+      setError("给我一段正文（至少十个字），而不是一句概括。");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      setResult(await api.composeHints(projectId, fragment.trim()));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const useChapterTail = () => {
+    if (chapter?.content) setFragment(chapter.content.slice(-300));
+  };
+
   return (
     <div className="pane">
-      <AskForm pane={pane} placeholder="描述当前场景，找相关设定" action="检索" />
-      {pane.error && <p className="error">{pane.error}</p>}
-      {pane.loading && <p className="loading">在设定库里翻找…</p>}
-      {pane.items && pane.items.length === 0 && (
-        <p className="empty">没有找到相关设定。先在「设定」窗口里存些角色和世界观。</p>
+      <p className="pane-hint">
+        贴一段正文，参谋会告诉你：哪些<strong>设定能在此处驱动情节</strong>、
+        素材库里有什么<strong>母题方向</strong>可以流向，以及一个整合的走向建议。
+      </p>
+      <textarea
+        className="ingest-text"
+        rows={4}
+        value={fragment}
+        placeholder="粘贴当前写到的正文片段…"
+        onChange={(e) => setFragment(e.target.value)}
+      />
+      <div className="ingest-actions">
+        <button className="btn ghost" onClick={useChapterTail} disabled={!chapter}>
+          取本章结尾
+        </button>
+        <button className="btn primary" onClick={run} disabled={loading}>
+          {loading ? "参谋思考中…" : "问参谋"}
+        </button>
+      </div>
+      {error && <p className="error">{error}</p>}
+
+      {result && (
+        <>
+          {result.organization && (
+            <div className="counsel-org">{result.organization}</div>
+          )}
+          {result.drivers.length > 0 && <h3 className="pane-title">设定 · 驱动</h3>}
+          {result.drivers.map((d, i) => (
+            <div className="slip" key={`d${i}`} style={{ "--slip-heat": Math.max(d.score, 0.25) }}>
+              <div className="slip-head">
+                <span className="slip-tag">{SOURCE_LABEL[d.source_type] || d.source_type}</span>
+                <span className="slip-score">{d.score.toFixed(3)}</span>
+              </div>
+              <p className="slip-body">
+                <strong>{d.suggestion}</strong>
+                <br />
+                <span className="cite">依据：{d.content.slice(0, 60)}</span>
+              </p>
+            </div>
+          ))}
+          {result.directions.length > 0 && <h3 className="pane-title">素材 · 方向</h3>}
+          {result.directions.map((d, i) => (
+            <div className="slip" key={`m${i}`} style={{ "--slip-heat": Math.max(d.score, 0.25) }}>
+              <div className="slip-head">
+                <span className="slip-tag">《{d.work_title}》</span>
+                <span className="slip-score">{d.score.toFixed(3)}</span>
+              </div>
+              <p className="slip-body">
+                <strong>{d.suggestion}</strong>
+                <br />
+                <span className="cite">{d.author} · {d.knowledge_type}：{d.content.slice(0, 50)}</span>
+              </p>
+            </div>
+          ))}
+          <details className="debug-view">
+            <summary>调试视图：原始检索命中</summary>
+            {result.raw_settings.map((c) => (
+              <div className="slip" key={c.id} style={{ "--slip-heat": 0.3 }}>
+                <div className="slip-head">
+                  <span className="slip-tag">{SOURCE_LABEL[c.source_type] || c.source_type}</span>
+                  <span className="slip-score">{c.score.toFixed(3)}</span>
+                </div>
+                <p className="slip-body">{c.content}</p>
+              </div>
+            ))}
+            {result.raw_literary.map((q, i) => (
+              <div className="slip" key={`rl${i}`} style={{ "--slip-heat": 0.3 }}>
+                <div className="slip-head">
+                  <span className="slip-tag">《{q.work_title}》</span>
+                  <span className="slip-score">{q.score.toFixed(3)}</span>
+                </div>
+                <p className="slip-body">{q.content}</p>
+              </div>
+            ))}
+          </details>
+        </>
       )}
-      {pane.items?.map((c) => (
-        <div className="slip" key={c.id} style={{ "--slip-heat": Math.max(c.score, 0.25) }}>
-          <div className="slip-head">
-            <span className="slip-tag">{SOURCE_LABEL[c.source_type] || c.source_type}</span>
-            <span className="slip-score">{c.score.toFixed(3)}</span>
-          </div>
-          <p className="slip-body">{c.content}</p>
-        </div>
-      ))}
-      {pane.items === null && !pane.loading && (
+      {!result && !loading && (
         <p className="empty">
-          这里是 RAG 的观察窗：
+          写不下去的段落，正是参谋的用武之地。
           <br />
-          输入一句场景描述，看检索层会把哪些设定喂给模型。
+          检索出的每条建议都有出处，绝不凭空编造。
         </p>
       )}
     </div>

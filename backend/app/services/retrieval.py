@@ -23,12 +23,31 @@ from app.core.embedding import embed_text
 from app.models.setting_chunk import SettingChunk
 from app.schemas.retrieval import RetrievedChunk
 
+# --- 检索通道矩阵 ---------------------------------------------------------------
+# Every feature reads through a named channel; the channel decides which sources
+# may answer. ONE table governs the whole system — add a source here and every
+# consumer updates together; a feature that needs different rules gets its own
+# row instead of an ad-hoc filter (that ad-hoc path is exactly how style samples
+# once leaked into the clue pane).
+#
+#   hints    线索/剧情参谋：找灵感 —— 只看事实设定，文风与金句不得介入
+#   generate 续写/破壁/仿写 的事实通道
+#   style    生成链路的文风参照通道（独立检索，紧邻生成点注入）
+#   debug    调试视图：不过滤
+CHANNELS: dict[str, list[str] | None] = {
+    "hints": ["character", "world", "foreshadowing"],
+    "generate": ["character", "world", "foreshadowing"],
+    "style": ["style"],
+    "debug": None,  # all sources
+}
+
 
 async def retrieve_settings(
     db: AsyncSession,
     project_id: int,
     query: str,
     *,
+    channel: str = "hints",
     top_k: int | None = None,
     source_types: list[str] | None = None,
     min_score: float | None = None,
@@ -41,6 +60,8 @@ async def retrieve_settings(
     """
     top_k = top_k or settings.retrieval_top_k
     min_score = settings.retrieval_min_score if min_score is None else min_score
+    if source_types is None:  # explicit source_types (debug/tests) overrides
+        source_types = CHANNELS[channel]
 
     query_vec = await embed_text(query)
     # pgvector `<=>` is cosine distance; similarity = 1 - distance.

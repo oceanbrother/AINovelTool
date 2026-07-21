@@ -30,7 +30,6 @@ _CONTINUE_SYSTEM = (
 )
 
 # fact sources for the settings block; style rides a separate retrieval path
-_FACT_SOURCES = ["character", "world", "foreshadowing"]
 
 _BREAKTHROUGH_SYSTEM = (
     "你是小说剧情策划。基于当前剧情状态，提出若干条【走向不同】的后续分支"
@@ -69,13 +68,13 @@ async def _build_context_full(
     # two retrieval paths: facts for grounding, style samples for voice —
     # separated so prose samples never crowd out the fact slots
     chunks = await retrieval.retrieve_settings(
-        db, chapter.project_id, query, source_types=_FACT_SOURCES
+        db, chapter.project_id, query, channel="generate"
     )
     styles = await retrieval.retrieve_settings(
         db,
         chapter.project_id,
         query,
-        source_types=["style"],
+        channel="style",
         top_k=2,
         min_score=0.0,  # any sample beats none for voice consistency
     )

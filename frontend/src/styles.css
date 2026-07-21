@@ -450,6 +450,33 @@ input, textarea, select {
 }
 .slip .slip-body strong { color: var(--paper); font-weight: 600; }
 
+/* 剧情参谋 (compose-hints) */
+.muse .counsel-org {
+  background: var(--cinnabar-soft);
+  border-left: 3px solid var(--cinnabar);
+  border-radius: 3px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--paper);
+  margin-bottom: 12px;
+}
+.muse .slip .cite {
+  font-size: 12px;
+  color: var(--mist-dim);
+}
+.muse .debug-view {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--mist-dim);
+}
+.muse .debug-view summary {
+  cursor: pointer;
+  letter-spacing: 1px;
+  padding: 4px 0;
+}
+.muse .debug-view summary:hover { color: var(--cinnabar); }
+
 /* pane shared bits */
 .muse .pane-title {
   font-family: var(--serif);
