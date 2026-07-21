@@ -147,6 +147,7 @@ async def main() -> None:
                         project_id=args.project_id,
                         source_type="style",
                         source_id=None,
+                        source_label="epub",
                         content=content,
                         embedding=vec,
                     )

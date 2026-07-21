@@ -26,6 +26,7 @@ async def add_style_sample(
         project_id=project_id,
         source_type="style",
         source_id=None,
+        source_label=payload.label,
         content=payload.content,
         embedding=await embed_text(payload.content),
     )

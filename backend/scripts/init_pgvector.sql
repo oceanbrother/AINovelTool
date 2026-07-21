@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS setting_chunks (
     project_id  BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     source_type TEXT NOT NULL,       -- character / world / foreshadowing / style
     source_id   BIGINT,              -- id in the originating table (nullable)
+    source_label TEXT,               -- style provenance: epub / manual / 内化
     content     TEXT NOT NULL,
     embedding   vector(1024),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()

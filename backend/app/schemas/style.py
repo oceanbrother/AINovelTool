@@ -14,9 +14,13 @@ class StyleSampleCreate(BaseModel):
     """
 
     content: str = Field(min_length=20, description="建议 100-500 字的段落")
+    # 来源标记：manual（手贴）/ 内化（仿写过检稿并入正文时自动存入）。
+    # epub 由导入脚本写入，不经此接口。
+    label: str = Field(default="manual", pattern="^(manual|内化)$")
 
 
 class StyleSampleOut(ORMModel):
     id: int
     content: str
+    source_label: str | None
     created_at: datetime

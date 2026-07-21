@@ -20,7 +20,7 @@ from app.core import llm
 from app.core.config import settings
 from app.models.chapter import Chapter
 from app.schemas.generation import BranchIdea
-from app.services import retrieval, summary
+from app.services import literary, retrieval, summary
 
 _CONTINUE_SYSTEM = (
     "你是一位都市幻想小说的资深代笔作者。依据提供的【滚动摘要】【近期正文】和"
@@ -43,20 +43,24 @@ async def build_imitation_context(
     db: AsyncSession, chapter: Chapter, query: str
 ) -> tuple[str, list, list]:
     """Like _build_context but also returns the style chunks, so the
-    imitation self-check loop can run its plagiarism/style gates on them."""
+    imitation self-check loop can run its plagiarism/style gates on them.
+
+    仿写通道：设定 + 文风。行文双库不介入（学语感时引经据典不伦不类）。"""
     context, chunks, styles = await _build_context_full(db, chapter, query)
     return context, chunks, styles
 
 
 async def _build_context(
-    db: AsyncSession, chapter: Chapter, query: str
+    db: AsyncSession, chapter: Chapter, query: str, *, with_literary: bool = False
 ) -> tuple[str, list]:
-    context, chunks, _styles = await _build_context_full(db, chapter, query)
+    context, chunks, _styles = await _build_context_full(
+        db, chapter, query, with_literary=with_literary
+    )
     return context, chunks
 
 
 async def _build_context_full(
-    db: AsyncSession, chapter: Chapter, query: str
+    db: AsyncSession, chapter: Chapter, query: str, *, with_literary: bool = False
 ) -> tuple[str, list, list]:
     roll = await summary.get_or_create_summary(db, chapter.project_id)
     recent = await summary.recent_chapters_text(
@@ -70,14 +74,27 @@ async def _build_context_full(
     chunks = await retrieval.retrieve_settings(
         db, chapter.project_id, query, channel="generate"
     )
+    # voice reference: the author's INTERNALIZED voice (accepted imitation
+    # drafts, label=内化) is preferred; only when none exist yet do we fall
+    # back to raw source-material samples (epub/manual)
     styles = await retrieval.retrieve_settings(
         db,
         chapter.project_id,
         query,
         channel="style",
+        source_labels=["内化"],
         top_k=2,
-        min_score=0.0,  # any sample beats none for voice consistency
+        min_score=0.0,
     )
+    if not styles:
+        styles = await retrieval.retrieve_settings(
+            db,
+            chapter.project_id,
+            query,
+            channel="style",
+            top_k=2,
+            min_score=0.0,  # any sample beats none for voice consistency
+        )
     settings_block = retrieval.format_chunks_for_prompt(chunks)
     context = (
         f"【滚动摘要】\n{roll.content or '（暂无）'}\n\n"
@@ -85,6 +102,23 @@ async def _build_context_full(
         f"【检索到的设定】\n{settings_block}\n\n"
         f"【当前章节正文】{chapter.title or ''}\n{chapter.content}"
     )
+    if with_literary:
+        # 续写通道专属：行文双库以"可化用素材"身份进入 prompt。它们是修辞
+        # 储备而非任务清单——三条防线（自然贴合才用/至多一处/宁可不用）把
+        # 素材从"指令"降级回"储备"，防止模型硬凑引用。
+        materials = await literary.retrieve_quotes(db, query, top_k=2, library="素材")
+        quotes = await literary.retrieve_quotes(db, query, top_k=2, library="金句")
+        entries = [
+            f"- 《{q.work_title}》{q.author}·{q.knowledge_type}：{q.content}"
+            for q in (*materials, *quotes)
+        ]
+        if entries:
+            context += (
+                "\n\n【可化用素材】（软供给，非必用）\n" + "\n".join(entries) + "\n"
+                "化用规则：以上素材是你的文化联想储备，不是任务清单。"
+                "只有情节自然流到那里时才化用（角色顺口引一句、叙述暗合某个母题）；"
+                "一次续写至多化用一处；宁可全部不用，不可生硬塞入。"
+            )
     if styles:
         # placed LAST — adjacent to the generation point — so the voice
         # instruction isn't diluted by the long context above it
@@ -108,7 +142,9 @@ async def continue_chapter_stream(
     Query for retrieval = chapter tail + instruction.
     """
     query = (chapter.content[-500:] + " " + (instruction or "")).strip()
-    context, chunks = await _build_context(db, chapter, query or chapter.title or "")
+    context, chunks = await _build_context(
+        db, chapter, query or chapter.title or "", with_literary=True
+    )
     yield "clues", chunks
     user = context
     if instruction:

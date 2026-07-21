@@ -25,6 +25,11 @@ class SettingChunk(Base):
     )
     source_type: Mapped[str] = mapped_column(Text, nullable=False)
     source_id: Mapped[int | None] = mapped_column(BigInteger)
+    # provenance for style samples: 'epub' (imported book), 'manual' (pasted),
+    # '内化' (imitation draft that passed the self-check and was accepted) —
+    # the continue channel prefers 内化 so the author's derived voice, not the
+    # source material, anchors formal writing
+    source_label: Mapped[str | None] = mapped_column(Text)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[list[float] | None] = mapped_column(
         Vector(settings.embedding_dim)

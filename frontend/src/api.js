@@ -32,8 +32,8 @@ export const api = {
   deleteWorld: (pid, wid) => json("DELETE", `/projects/${pid}/world/${wid}`),
 
   listStyleSamples: (pid) => json("GET", `/projects/${pid}/style-samples`),
-  addStyleSample: (pid, content) =>
-    json("POST", `/projects/${pid}/style-samples`, { content }),
+  addStyleSample: (pid, content, label = "manual") =>
+    json("POST", `/projects/${pid}/style-samples`, { content, label }),
   deleteStyleSample: (pid, sid) =>
     json("DELETE", `/projects/${pid}/style-samples/${sid}`),
 

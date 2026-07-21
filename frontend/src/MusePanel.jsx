@@ -754,6 +754,26 @@ function ImitatePane({ projectId, chapter, onAppend }) {
   const [result, setResult] = useState(null);
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState(null);
+  const [note, setNote] = useState(null);
+
+  const accept = async () => {
+    if (!result) return;
+    const passed = result.attempts.some((a) => a.passed);
+    await onAppend?.(result.text);
+    if (passed) {
+      // 过检稿内化为文风样本：正式续写将优先以它为语感参照，
+      // 逐步取代对源素材（epub 样本）的直接依赖
+      try {
+        await api.addStyleSample(projectId, result.text, "内化");
+        setNote("已并入正文，并内化为文风样本（续写将优先参照你的过检稿）。");
+      } catch (err) {
+        setNote(`已并入正文；内化失败：${err.message}`);
+      }
+    } else {
+      setNote("已并入正文。此稿未过检，不作内化。");
+    }
+    setResult(null);
+  };
 
   const run = async (revision = false) => {
     if (!chapter) {
@@ -800,6 +820,7 @@ function ImitatePane({ projectId, chapter, onAppend }) {
         </button>
       </div>
       {error && <p className="error">{error}</p>}
+      {note && <p className="ok">{note}</p>}
 
       {result && (
         <>
@@ -820,7 +841,7 @@ function ImitatePane({ projectId, chapter, onAppend }) {
           </div>
           <div className="imitate-draft">{result.text}</div>
           <div className="ingest-actions">
-            <button className="btn primary" onClick={() => onAppend?.(result.text)}>
+            <button className="btn primary" onClick={accept}>
               并入正文
             </button>
             <button className="btn ghost" onClick={() => setResult(null)}>
