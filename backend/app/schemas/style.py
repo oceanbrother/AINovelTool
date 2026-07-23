@@ -23,4 +23,12 @@ class StyleSampleOut(ORMModel):
     id: int
     content: str
     source_label: str | None
+    scene_tag: str | None
     created_at: datetime
+
+
+class StyleSampleList(BaseModel):
+    total: int                       # rows matching the current filter
+    items: list[StyleSampleOut]      # this page
+    by_label: dict[str, int]         # project-wide facet counts (unfiltered)
+    by_scene: dict[str, int]

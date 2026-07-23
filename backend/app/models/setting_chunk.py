@@ -30,6 +30,11 @@ class SettingChunk(Base):
     # the continue channel prefers 内化 so the author's derived voice, not the
     # source material, anchors formal writing
     source_label: Mapped[str | None] = mapped_column(Text)
+    # scene classification for style samples: 战斗/对话/日常/景物/心理.
+    # Assigned by anchor-vector nearest-neighbour (services/scene.py) so the
+    # imitation loop can recall same-scene samples — matching a battle draft
+    # against battle prose, not against unrelated dialogue.
+    scene_tag: Mapped[str | None] = mapped_column(Text)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[list[float] | None] = mapped_column(
         Vector(settings.embedding_dim)

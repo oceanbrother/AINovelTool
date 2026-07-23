@@ -31,7 +31,12 @@ export const api = {
   createWorld: (pid, payload) => json("POST", `/projects/${pid}/world`, payload),
   deleteWorld: (pid, wid) => json("DELETE", `/projects/${pid}/world/${wid}`),
 
-  listStyleSamples: (pid) => json("GET", `/projects/${pid}/style-samples`),
+  listStyleSamples: (pid, { label, scene, offset = 0, limit = 20 } = {}) => {
+    const q = new URLSearchParams({ offset, limit });
+    if (label) q.set("label", label);
+    if (scene) q.set("scene", scene);
+    return json("GET", `/projects/${pid}/style-samples?${q}`);
+  },
   addStyleSample: (pid, content, label = "manual") =>
     json("POST", `/projects/${pid}/style-samples`, { content, label }),
   deleteStyleSample: (pid, sid) =>

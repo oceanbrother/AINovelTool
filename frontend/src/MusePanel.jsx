@@ -271,18 +271,34 @@ function chunkText(text, target = 400, min = 150) {
   return chunks;
 }
 
+const LABEL_NAME = { epub: "原著", manual: "手贴", 内化: "内化" };
+const PAGE_SIZE = 20;
+
 function IngestPane({ projectId }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [report, setReport] = useState(null);
-  const [samples, setSamples] = useState(null);
   const [error, setError] = useState(null);
 
-  const reload = async () => setSamples(await api.listStyleSamples(projectId));
+  const [data, setData] = useState(null); // {total, items, by_label, by_scene}
+  const [labelFilter, setLabelFilter] = useState("");
+  const [sceneFilter, setSceneFilter] = useState("");
+  const [offset, setOffset] = useState(0);
+
+  const reload = async () => {
+    setData(
+      await api.listStyleSamples(projectId, {
+        label: labelFilter,
+        scene: sceneFilter,
+        offset,
+        limit: PAGE_SIZE,
+      })
+    );
+  };
   useEffect(() => {
     reload().catch((e) => setError(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+  }, [projectId, labelFilter, sceneFilter, offset]);
 
   const readFile = (file) => {
     const reader = new FileReader();
@@ -303,6 +319,7 @@ function IngestPane({ projectId }) {
       for (const c of chunks) await api.addStyleSample(projectId, c);
       setReport(`已切成 ${chunks.length} 段样本入库。`);
       setText("");
+      setOffset(0);
       await reload();
     } catch (err) {
       setError(err.message);
@@ -310,6 +327,16 @@ function IngestPane({ projectId }) {
       setBusy(false);
     }
   };
+
+  const remove = async (id) => {
+    await api.deleteStyleSample(projectId, id);
+    await reload();
+  };
+
+  const total = data?.total ?? 0;
+  const grandTotal = data
+    ? Object.values(data.by_label).reduce((a, b) => a + b, 0)
+    : 0;
 
   return (
     <div className="pane">
@@ -319,7 +346,7 @@ function IngestPane({ projectId }) {
       </p>
       <textarea
         className="ingest-text"
-        rows={6}
+        rows={5}
         value={text}
         placeholder="粘贴一段你想让 AI 学习语感的文字…"
         onChange={(e) => setText(e.target.value)}
@@ -340,10 +367,99 @@ function IngestPane({ projectId }) {
       </div>
       {report && <p className="ok">{report}</p>}
       {error && <p className="error">{error}</p>}
-      {samples && (
-        <p className="pane-hint">
-          文风库现有 <strong>{samples.length}</strong> 段样本。
-        </p>
+
+      {data && (
+        <>
+          <h3 className="pane-title">文风库 · {grandTotal} 段</h3>
+
+          <div className="facet-row">
+            <button
+              className={`chip${labelFilter === "" ? " active" : ""}`}
+              onClick={() => {
+                setLabelFilter("");
+                setOffset(0);
+              }}
+            >
+              全部来源
+            </button>
+            {Object.entries(data.by_label).map(([k, n]) => (
+              <button
+                key={k}
+                className={`chip${labelFilter === k ? " active" : ""}`}
+                onClick={() => {
+                  setLabelFilter(labelFilter === k ? "" : k);
+                  setOffset(0);
+                }}
+              >
+                {LABEL_NAME[k] || k} {n}
+              </button>
+            ))}
+          </div>
+
+          <div className="facet-row">
+            <button
+              className={`chip${sceneFilter === "" ? " active" : ""}`}
+              onClick={() => {
+                setSceneFilter("");
+                setOffset(0);
+              }}
+            >
+              全部场景
+            </button>
+            {Object.entries(data.by_scene).map(([k, n]) => (
+              <button
+                key={k}
+                className={`chip${sceneFilter === k ? " active" : ""}`}
+                onClick={() => {
+                  setSceneFilter(sceneFilter === k ? "" : k);
+                  setOffset(0);
+                }}
+              >
+                {k} {n}
+              </button>
+            ))}
+          </div>
+
+          {data.items.length === 0 && (
+            <p className="empty">这个筛选下没有样本。</p>
+          )}
+          {data.items.map((s) => (
+            <div className="slip" key={s.id} style={{ "--slip-heat": 0.4 }}>
+              <div className="slip-head">
+                <span className="slip-tag">
+                  {LABEL_NAME[s.source_label] || s.source_label || "样本"}
+                  {s.scene_tag ? ` · ${s.scene_tag}` : ""}
+                </span>
+                <span className="thread-actions">
+                  <button onClick={() => remove(s.id)}>删除</button>
+                </span>
+              </div>
+              <p className="slip-body">{s.content.slice(0, 90)}…</p>
+            </div>
+          ))}
+
+          {total > PAGE_SIZE && (
+            <div className="pager">
+              <button
+                className="btn ghost"
+                disabled={offset === 0}
+                onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+              >
+                上一页
+              </button>
+              <span className="pager-info">
+                {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} / {total}
+              </span>
+              <button
+                className="btn ghost"
+                disabled={offset + PAGE_SIZE >= total}
+                onClick={() => setOffset(offset + PAGE_SIZE)}
+              >
+                下一页
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

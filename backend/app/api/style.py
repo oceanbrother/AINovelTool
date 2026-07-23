@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.embedding import embed_text
 from app.db import get_session
 from app.models.setting_chunk import SettingChunk
-from app.schemas.style import StyleSampleCreate, StyleSampleOut
+from app.schemas.style import StyleSampleCreate, StyleSampleList, StyleSampleOut
+from app.services import scene
 
 router = APIRouter(prefix="/projects/{project_id}/style-samples", tags=["style"])
 
@@ -22,13 +23,16 @@ async def add_style_sample(
     payload: StyleSampleCreate,
     db: AsyncSession = Depends(get_session),
 ):
+    vec = await embed_text(payload.content)
+    anchors = await scene.anchor_vectors_public()
     obj = SettingChunk(
         project_id=project_id,
         source_type="style",
         source_id=None,
         source_label=payload.label,
+        scene_tag=scene.classify_vector(vec, anchors),
         content=payload.content,
-        embedding=await embed_text(payload.content),
+        embedding=vec,
     )
     db.add(obj)
     await db.commit()
@@ -36,21 +40,52 @@ async def add_style_sample(
     return obj
 
 
-@router.get("", response_model=list[StyleSampleOut])
+@router.get("", response_model=StyleSampleList)
 async def list_style_samples(
-    project_id: int, db: AsyncSession = Depends(get_session)
+    project_id: int,
+    label: str | None = None,
+    scene: str | None = None,
+    offset: int = 0,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_session),
 ):
-    rows = (
-        await db.execute(
-            select(SettingChunk)
-            .where(
-                SettingChunk.project_id == project_id,
-                SettingChunk.source_type == "style",
+    async def _facet(col):
+        rows = (
+            await db.execute(
+                select(col, func.count())
+                .where(
+                    SettingChunk.project_id == project_id,
+                    SettingChunk.source_type == "style",
+                )
+                .group_by(col)
             )
-            .order_by(SettingChunk.id)
+        ).all()
+        return {str(k): n for k, n in rows if k is not None}
+
+    by_label = await _facet(SettingChunk.source_label)
+    by_scene = await _facet(SettingChunk.scene_tag)
+
+    filtered = select(SettingChunk).where(
+        SettingChunk.project_id == project_id,
+        SettingChunk.source_type == "style",
+    )
+    if label:
+        filtered = filtered.where(SettingChunk.source_label == label)
+    if scene:
+        filtered = filtered.where(SettingChunk.scene_tag == scene)
+
+    total = (
+        await db.execute(select(func.count()).select_from(filtered.subquery()))
+    ).scalar_one()
+    items = (
+        await db.execute(
+            filtered.order_by(SettingChunk.id.desc()).offset(offset).limit(limit)
         )
     ).scalars().all()
-    return rows
+
+    return StyleSampleList(
+        total=total, items=items, by_label=by_label, by_scene=by_scene
+    )
 
 
 @router.delete("/{sample_id}", status_code=204)

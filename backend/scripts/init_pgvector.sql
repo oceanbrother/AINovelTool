@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS setting_chunks (
     source_type TEXT NOT NULL,       -- character / world / foreshadowing / style
     source_id   BIGINT,              -- id in the originating table (nullable)
     source_label TEXT,               -- style provenance: epub / manual / 内化
+    scene_tag   TEXT,                -- style scene: 战斗/对话/日常/景物/心理
     content     TEXT NOT NULL,
     embedding   vector(1024),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()

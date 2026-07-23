@@ -51,6 +51,7 @@ async def retrieve_settings(
     top_k: int | None = None,
     source_types: list[str] | None = None,
     source_labels: list[str] | None = None,
+    scene_tags: list[str] | None = None,
     min_score: float | None = None,
 ) -> list[RetrievedChunk]:
     """Return the top setting chunks most relevant to `query` for a project.
@@ -76,6 +77,8 @@ async def retrieve_settings(
         stmt = stmt.where(SettingChunk.source_type.in_(source_types))
     if source_labels:
         stmt = stmt.where(SettingChunk.source_label.in_(source_labels))
+    if scene_tags:
+        stmt = stmt.where(SettingChunk.scene_tag.in_(scene_tags))
     stmt = stmt.order_by(distance).limit(top_k)
 
     rows = (await db.execute(stmt)).all()

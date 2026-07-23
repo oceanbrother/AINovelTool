@@ -20,7 +20,7 @@ from app.core import llm
 from app.core.config import settings
 from app.models.chapter import Chapter
 from app.schemas.generation import BranchIdea
-from app.services import literary, retrieval, summary
+from app.services import literary, retrieval, scene, summary
 
 _CONTINUE_SYSTEM = (
     "你是一位都市幻想小说的资深代笔作者。依据提供的【滚动摘要】【近期正文】和"
@@ -75,8 +75,11 @@ async def _build_context_full(
         db, chapter.project_id, query, channel="generate"
     )
     # voice reference: the author's INTERNALIZED voice (accepted imitation
-    # drafts, label=内化) is preferred; only when none exist yet do we fall
-    # back to raw source-material samples (epub/manual)
+    # drafts, label=内化) is preferred and not scene-filtered — that pool is
+    # small and already the target voice. Otherwise fall back to source
+    # samples, and there scene matters: recall same-scene prose (battle vs
+    # battle) so a minority scene like 战斗 isn't crowded out by the
+    # dialogue/日常 majority. If samples aren't scene-tagged yet, any scene.
     styles = await retrieval.retrieve_settings(
         db,
         chapter.project_id,
@@ -86,6 +89,17 @@ async def _build_context_full(
         top_k=2,
         min_score=0.0,
     )
+    if not styles:
+        target_scene = await scene.classify_text(query)
+        styles = await retrieval.retrieve_settings(
+            db,
+            chapter.project_id,
+            query,
+            channel="style",
+            scene_tags=[target_scene],
+            top_k=2,
+            min_score=0.0,
+        )
     if not styles:
         styles = await retrieval.retrieve_settings(
             db,
