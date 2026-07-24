@@ -4,11 +4,25 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import llm
 from app.core.embedding import embed_text
 from app.db import get_session
 from app.models.setting_chunk import SettingChunk
-from app.schemas.style import StyleSampleCreate, StyleSampleList, StyleSampleOut
-from app.services import scene
+from app.schemas.style import (
+    StyleExpandRequest,
+    StyleExpandResponse,
+    StyleSampleCreate,
+    StyleSampleList,
+    StyleSampleOut,
+)
+from app.services import imitation, scene
+
+_EXPAND_SYSTEM = (
+    "你是作者的写作伙伴。作者选中了一段他欣赏的文字作为【手法参考】，"
+    "并给出【当前构思】。请借鉴参考段落的句长节奏、标点密度、叙述手法与"
+    "结构，写一段贴合当前构思的新文字——只借手法与语感，"
+    "绝不复述参考段落的具体内容、人物或情节。写 150-250 字。"
+)
 
 router = APIRouter(prefix="/projects/{project_id}/style-samples", tags=["style"])
 
@@ -86,6 +100,30 @@ async def list_style_samples(
     return StyleSampleList(
         total=total, items=items, by_label=by_label, by_scene=by_scene
     )
+
+
+@router.post("/{sample_id}/expand", response_model=StyleExpandResponse)
+async def expand_sample(
+    project_id: int,
+    sample_id: int,
+    payload: StyleExpandRequest,
+    db: AsyncSession = Depends(get_session),
+):
+    """借选中样本的手法，扩写贴合作者当前构思的新文字（不复述原文）。"""
+    obj = await db.get(SettingChunk, sample_id)
+    if obj is None or obj.project_id != project_id or obj.source_type != "style":
+        raise HTTPException(404, "style sample not found")
+    text = await llm.complete(
+        [
+            {"role": "system", "content": _EXPAND_SYSTEM},
+            {
+                "role": "user",
+                "content": f"【手法参考】\n{obj.content}\n\n【当前构思】\n{payload.idea}",
+            },
+        ]
+    )
+    overlap = imitation.ngram_overlap(text, [obj.content])
+    return StyleExpandResponse(text=text, ngram_overlap=round(overlap, 4))
 
 
 @router.delete("/{sample_id}", status_code=204)

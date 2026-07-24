@@ -274,6 +274,68 @@ function chunkText(text, target = 400, min = 150) {
 const LABEL_NAME = { epub: "原著", manual: "手贴", 内化: "内化" };
 const PAGE_SIZE = 20;
 
+function SampleSlip({ projectId, sample, onDelete }) {
+  const [open, setOpen] = useState(false);
+  const [idea, setIdea] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+
+  const expand = async () => {
+    if (idea.trim().length < 4) {
+      setError("先写一句当前构思。");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      setResult(await api.expandSample(projectId, sample.id, idea.trim()));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="slip" style={{ "--slip-heat": 0.4 }}>
+      <div className="slip-head">
+        <span className="slip-tag">
+          {LABEL_NAME[sample.source_label] || sample.source_label || "样本"}
+          {sample.scene_tag ? ` · ${sample.scene_tag}` : ""}
+        </span>
+        <span className="thread-actions">
+          <button onClick={() => setOpen((v) => !v)}>{open ? "收起" : "扩写"}</button>
+          <button onClick={() => onDelete(sample.id)}>删除</button>
+        </span>
+      </div>
+      <p className="slip-body">{sample.content.slice(0, 90)}…</p>
+      {open && (
+        <div className="expand-box">
+          <input
+            value={idea}
+            placeholder="当前构思，如：写主角初见神秘女孩的一刻"
+            onChange={(e) => setIdea(e.target.value)}
+          />
+          <button className="btn ghost" onClick={expand} disabled={busy}>
+            {busy ? "扩写中…" : "借这段的手法扩写"}
+          </button>
+          {error && <p className="error">{error}</p>}
+          {result && (
+            <>
+              <div className="expand-result">{result.text}</div>
+              <p className="pane-hint">
+                复述率 {(result.ngram_overlap * 100).toFixed(1)}%
+                （越低越好——只借手法与语感，未抄原文）
+              </p>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function IngestPane({ projectId }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -424,18 +486,7 @@ function IngestPane({ projectId }) {
             <p className="empty">这个筛选下没有样本。</p>
           )}
           {data.items.map((s) => (
-            <div className="slip" key={s.id} style={{ "--slip-heat": 0.4 }}>
-              <div className="slip-head">
-                <span className="slip-tag">
-                  {LABEL_NAME[s.source_label] || s.source_label || "样本"}
-                  {s.scene_tag ? ` · ${s.scene_tag}` : ""}
-                </span>
-                <span className="thread-actions">
-                  <button onClick={() => remove(s.id)}>删除</button>
-                </span>
-              </div>
-              <p className="slip-body">{s.content.slice(0, 90)}…</p>
-            </div>
+            <SampleSlip key={s.id} projectId={projectId} sample={s} onDelete={remove} />
           ))}
 
           {total > PAGE_SIZE && (

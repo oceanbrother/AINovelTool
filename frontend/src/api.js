@@ -41,6 +41,8 @@ export const api = {
     json("POST", `/projects/${pid}/style-samples`, { content, label }),
   deleteStyleSample: (pid, sid) =>
     json("DELETE", `/projects/${pid}/style-samples/${sid}`),
+  expandSample: (pid, sid, idea) =>
+    json("POST", `/projects/${pid}/style-samples/${sid}/expand`, { idea }),
 
 
   listForeshadowing: (pid) => json("GET", `/projects/${pid}/foreshadowing`),

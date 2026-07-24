@@ -32,3 +32,14 @@ class StyleSampleList(BaseModel):
     items: list[StyleSampleOut]      # this page
     by_label: dict[str, int]         # project-wide facet counts (unfiltered)
     by_scene: dict[str, int]
+
+
+class StyleExpandRequest(BaseModel):
+    """从一段选中的样本出发，借其手法扩写贴合当前构思的新文字。"""
+
+    idea: str = Field(min_length=4, description="作者当前的构思/场景方向")
+
+
+class StyleExpandResponse(BaseModel):
+    text: str
+    ngram_overlap: float  # 与原样本的 8 字重叠率，复述检测（越低越好）
