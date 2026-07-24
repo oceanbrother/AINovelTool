@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
-from app.schemas.compose import ComposeHintsRequest, ComposeHintsResponse
+from app.schemas.compose import ComposeOutlineRequest, ComposeOutlineResponse
 from app.schemas.retrieval import RetrieveRequest, RetrieveResponse
 from app.services import compose, retrieval
 
@@ -30,17 +30,17 @@ async def retrieve(
     return RetrieveResponse(query=payload.query, chunks=chunks)
 
 
-@router.post("/compose-hints", response_model=ComposeHintsResponse)
-async def compose_hints(
+@router.post("/compose-outline", response_model=ComposeOutlineResponse)
+async def compose_outline(
     project_id: int,
-    payload: ComposeHintsRequest,
+    payload: ComposeOutlineRequest,
     db: AsyncSession = Depends(get_session),
 ):
-    """剧情参谋 — 正文片段进，结构化剧情建议出（驱动/方向/组织建议）。"""
-    return await compose.compose_hints(
+    """细纲生成 — 正文片段进，几条可编辑的执行细纲出（走向/视角/入场/设定引出/节拍）。"""
+    return await compose.compose_outline(
         db,
         project_id,
         payload.fragment,
+        payload.num_outlines,
         payload.top_k_settings,
-        payload.top_k_literary,
     )

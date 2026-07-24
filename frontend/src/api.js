@@ -53,8 +53,11 @@ export const api = {
   deleteForeshadowing: (pid, fid) =>
     json("DELETE", `/projects/${pid}/foreshadowing/${fid}`),
 
-  composeHints: (pid, fragment) =>
-    json("POST", `/projects/${pid}/retrieve/compose-hints`, { fragment }),
+  composeOutline: (pid, fragment, numOutlines = 2) =>
+    json("POST", `/projects/${pid}/retrieve/compose-outline`, {
+      fragment,
+      num_outlines: numOutlines,
+    }),
 
   retrieve: (pid, query, topK = 5) =>
     json("POST", `/projects/${pid}/retrieve`, { query, top_k: topK }),

@@ -2,15 +2,14 @@ import React, { useEffect, useState } from "react";
 import { api, streamImitate } from "./api.js";
 
 // Three sections, each with focused windows:
-//   架构 — the world's skeleton: retrieval clues, material ingest, settings, threads
+//   架构 — the static library: material ingest, settings, threads
 //   行文 — the sentence level: citations, idioms
-//   创作 — generation: breakthrough branches, vetted imitation
+//   创作 — the generation pipeline: 破壁(diverge) → 细纲(stage) → 仿写(write, vetted)
 const SECTIONS = [
   {
     key: "arch",
     label: "架构",
     tabs: [
-      { key: "clues", label: "线索" },
       { key: "ingest", label: "素材" },
       { key: "settings", label: "设定" },
       { key: "threads", label: "伏笔" },
@@ -29,12 +28,20 @@ const SECTIONS = [
     label: "创作",
     tabs: [
       { key: "branches", label: "破壁" },
+      { key: "outline", label: "细纲" },
       { key: "imitate", label: "仿写" },
     ],
   },
 ];
 
-export default function MusePanel({ projectId, chapter, onAppend }) {
+export default function MusePanel({
+  projectId,
+  chapter,
+  onAppend,
+  onDirective,
+  directive,
+  directiveNonce,
+}) {
   const [sectionKey, setSectionKey] = useState("arch");
   const section = SECTIONS.find((s) => s.key === sectionKey);
   const [tabKey, setTabKey] = useState(section.tabs[0].key);
@@ -42,6 +49,13 @@ export default function MusePanel({ projectId, chapter, onAppend }) {
   const switchSection = (key) => {
     setSectionKey(key);
     setTabKey(SECTIONS.find((s) => s.key === key).tabs[0].key);
+  };
+
+  // 细纲 → 仿写 handoff: prefill the directive and jump to the 仿写 tab
+  const useForImitate = (text) => {
+    onDirective?.(text);
+    setSectionKey("create");
+    setTabKey("imitate");
   };
 
   return (
@@ -72,15 +86,28 @@ export default function MusePanel({ projectId, chapter, onAppend }) {
           </button>
         ))}
       </div>
-      {tabKey === "clues" && <CluesPane projectId={projectId} chapter={chapter} />}
       {tabKey === "ingest" && <IngestPane projectId={projectId} />}
       {tabKey === "settings" && <SettingsPane projectId={projectId} />}
       {tabKey === "threads" && <ThreadsPane projectId={projectId} chapter={chapter} />}
       {tabKey === "quotes" && <QuotesPane />}
       {tabKey === "idioms" && <IdiomsPane />}
       {tabKey === "branches" && <BranchesPane projectId={projectId} chapter={chapter} />}
+      {tabKey === "outline" && (
+        <OutlinePane
+          projectId={projectId}
+          chapter={chapter}
+          onContinue={onDirective}
+          onImitate={useForImitate}
+        />
+      )}
       {tabKey === "imitate" && (
-        <ImitatePane projectId={projectId} chapter={chapter} onAppend={onAppend} />
+        <ImitatePane
+          projectId={projectId}
+          chapter={chapter}
+          onAppend={onAppend}
+          directive={directive}
+          directiveNonce={directiveNonce}
+        />
       )}
     </aside>
   );
@@ -135,13 +162,15 @@ const SOURCE_LABEL = {
   style: "文风",
 };
 
-/* ---------- 架构 ---------- */
+/* ---------- 创作 · 细纲 ---------- */
 
-function CluesPane({ projectId, chapter }) {
+function OutlinePane({ projectId, chapter, onContinue, onImitate }) {
   const [fragment, setFragment] = useState("");
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [edited, setEdited] = useState({}); // index -> author-edited directive
+  const [sentHint, setSentHint] = useState(false);
 
   const run = async () => {
     if (fragment.trim().length < 10) {
@@ -150,8 +179,10 @@ function CluesPane({ projectId, chapter }) {
     }
     setLoading(true);
     setError(null);
+    setSentHint(false);
     try {
-      setResult(await api.composeHints(projectId, fragment.trim()));
+      setResult(await api.composeOutline(projectId, fragment.trim(), 2));
+      setEdited({});
     } catch (err) {
       setError(err.message);
     } finally {
@@ -163,11 +194,18 @@ function CluesPane({ projectId, chapter }) {
     if (chapter?.content) setFragment(chapter.content.slice(-300));
   };
 
+  const compile = (o) =>
+    `走向：${o.direction}\n视角：${o.pov}\n入场：${o.entrances}\n` +
+    `设定引出：${o.reveals}\n节拍：\n` +
+    o.beats.map((b, i) => `${i + 1}. ${b}`).join("\n");
+
+  const directiveOf = (i, o) => (i in edited ? edited[i] : compile(o));
+
   return (
     <div className="pane">
       <p className="pane-hint">
-        贴一段正文，参谋会告诉你：哪些<strong>设定能在此处驱动情节</strong>、
-        素材库里有什么<strong>母题方向</strong>可以流向，以及一个整合的走向建议。
+        已经知道接下来大概往哪走时，来这里<strong>排布局</strong>：生成几条可编辑的
+        执行细纲（视角调度 / 角色入场 / 设定引出 / 节拍）。改好后 → 续写或 → 仿写生成成稿。
       </p>
       <textarea
         className="ingest-text"
@@ -181,72 +219,77 @@ function CluesPane({ projectId, chapter }) {
           取本章结尾
         </button>
         <button className="btn primary" onClick={run} disabled={loading}>
-          {loading ? "参谋思考中…" : "问参谋"}
+          {loading ? "排布中…" : "生成细纲"}
         </button>
       </div>
       {error && <p className="error">{error}</p>}
+      {sentHint && (
+        <p className="ok">已填入「往下写」的方向指引——回到稿纸点『往下写』即可生成。</p>
+      )}
+
+      {result?.options.map((o, i) => (
+        <div className="outline-card" key={i}>
+          <div className="outline-dir">{o.direction}</div>
+          <dl className="outline-fields">
+            <div><dt>视角</dt><dd>{o.pov}</dd></div>
+            <div><dt>入场</dt><dd>{o.entrances}</dd></div>
+            <div><dt>设定引出</dt><dd>{o.reveals}</dd></div>
+          </dl>
+          {o.beats.length > 0 && (
+            <ol className="outline-beats">
+              {o.beats.map((b, j) => <li key={j}>{b}</li>)}
+            </ol>
+          )}
+          {o.grounded.length > 0 && (
+            <div className="clue-strip" aria-label="细纲依据的设定">
+              <span className="clue-strip-label">依据</span>
+              {o.grounded.map((g, j) => (
+                <span className="clue-chip" key={j} title={g}>{g.slice(0, 14)}</span>
+              ))}
+            </div>
+          )}
+          <textarea
+            className="outline-edit"
+            rows={5}
+            value={directiveOf(i, o)}
+            onChange={(e) => setEdited({ ...edited, [i]: e.target.value })}
+          />
+          <div className="ingest-actions">
+            <button
+              className="btn ghost"
+              onClick={() => {
+                onContinue?.(directiveOf(i, o));
+                setSentHint(true);
+              }}
+            >
+              → 续写
+            </button>
+            <button className="btn primary" onClick={() => onImitate?.(directiveOf(i, o))}>
+              → 仿写
+            </button>
+          </div>
+        </div>
+      ))}
 
       {result && (
-        <>
-          {result.organization && (
-            <div className="counsel-org">{result.organization}</div>
-          )}
-          {result.drivers.length > 0 && <h3 className="pane-title">设定 · 驱动</h3>}
-          {result.drivers.map((d, i) => (
-            <div className="slip" key={`d${i}`} style={{ "--slip-heat": Math.max(d.score, 0.25) }}>
+        <details className="debug-view">
+          <summary>依据：原始检索命中</summary>
+          {result.raw_settings.map((c) => (
+            <div className="slip" key={c.id} style={{ "--slip-heat": 0.3 }}>
               <div className="slip-head">
-                <span className="slip-tag">{SOURCE_LABEL[d.source_type] || d.source_type}</span>
-                <span className="slip-score">{d.score.toFixed(3)}</span>
+                <span className="slip-tag">{SOURCE_LABEL[c.source_type] || c.source_type}</span>
+                <span className="slip-score">{c.score.toFixed(3)}</span>
               </div>
-              <p className="slip-body">
-                <strong>{d.suggestion}</strong>
-                <br />
-                <span className="cite">依据：{d.content.slice(0, 60)}</span>
-              </p>
+              <p className="slip-body">{c.content}</p>
             </div>
           ))}
-          {result.directions.length > 0 && <h3 className="pane-title">素材 · 方向</h3>}
-          {result.directions.map((d, i) => (
-            <div className="slip" key={`m${i}`} style={{ "--slip-heat": Math.max(d.score, 0.25) }}>
-              <div className="slip-head">
-                <span className="slip-tag">《{d.work_title}》</span>
-                <span className="slip-score">{d.score.toFixed(3)}</span>
-              </div>
-              <p className="slip-body">
-                <strong>{d.suggestion}</strong>
-                <br />
-                <span className="cite">{d.author} · {d.knowledge_type}：{d.content.slice(0, 50)}</span>
-              </p>
-            </div>
-          ))}
-          <details className="debug-view">
-            <summary>调试视图：原始检索命中</summary>
-            {result.raw_settings.map((c) => (
-              <div className="slip" key={c.id} style={{ "--slip-heat": 0.3 }}>
-                <div className="slip-head">
-                  <span className="slip-tag">{SOURCE_LABEL[c.source_type] || c.source_type}</span>
-                  <span className="slip-score">{c.score.toFixed(3)}</span>
-                </div>
-                <p className="slip-body">{c.content}</p>
-              </div>
-            ))}
-            {result.raw_literary.map((q, i) => (
-              <div className="slip" key={`rl${i}`} style={{ "--slip-heat": 0.3 }}>
-                <div className="slip-head">
-                  <span className="slip-tag">《{q.work_title}》</span>
-                  <span className="slip-score">{q.score.toFixed(3)}</span>
-                </div>
-                <p className="slip-body">{q.content}</p>
-              </div>
-            ))}
-          </details>
-        </>
+        </details>
       )}
       {!result && !loading && (
         <p className="empty">
-          写不下去的段落，正是参谋的用武之地。
+          破壁找到方向后，来这里把它排成可执行的细纲。
           <br />
-          检索出的每条建议都有出处，绝不凭空编造。
+          每条细纲都能改，改好交给续写或仿写写成稿。
         </p>
       )}
     </div>
@@ -920,7 +963,7 @@ function BranchesPane({ projectId, chapter }) {
   );
 }
 
-function ImitatePane({ projectId, chapter, onAppend }) {
+function ImitatePane({ projectId, chapter, onAppend, directive, directiveNonce }) {
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
@@ -937,6 +980,12 @@ function ImitatePane({ projectId, chapter, onAppend }) {
       .then((cs) => cs[0] && setHero(cs[0].name))
       .catch(() => {});
   }, [projectId]);
+
+  // 细纲 → 仿写 handoff: prefill the instruction when a directive is handed in
+  useEffect(() => {
+    if (directive) setInstruction(directive);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [directiveNonce]);
 
   const accept = async () => {
     if (!result) return;

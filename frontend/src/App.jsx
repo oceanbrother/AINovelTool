@@ -145,6 +145,15 @@ function Workspace({ projectId }) {
   const patchChapter = (cid, patch) =>
     setChapters((chs) => chs.map((c) => (c.id === cid ? { ...c, ...patch } : c)));
 
+  // 细纲 → 续写/仿写 handoff: an edited outline becomes the generation directive.
+  // The nonce forces re-apply even when the text repeats.
+  const [directive, setDirective] = useState("");
+  const [directiveNonce, setDirectiveNonce] = useState(0);
+  const applyDirective = (text) => {
+    setDirective(text);
+    setDirectiveNonce((n) => n + 1);
+  };
+
   return (
     <div
       className="workspace"
@@ -189,6 +198,8 @@ function Workspace({ projectId }) {
           projectId={projectId}
           chapter={chapter}
           onLocalChange={patchChapter}
+          directive={directive}
+          directiveNonce={directiveNonce}
         />
       ) : (
         <div className="desk">
@@ -208,12 +219,19 @@ function Workspace({ projectId }) {
         onPointerDown={dragStart("muse")}
       />
 
-      <MusePanel projectId={projectId} chapter={chapter} onAppend={appendToChapter} />
+      <MusePanel
+        projectId={projectId}
+        chapter={chapter}
+        onAppend={appendToChapter}
+        onDirective={applyDirective}
+        directive={directive}
+        directiveNonce={directiveNonce}
+      />
     </div>
   );
 }
 
-function Editor({ projectId, chapter, onLocalChange }) {
+function Editor({ projectId, chapter, onLocalChange, directive, directiveNonce }) {
   const [title, setTitle] = useState(chapter.title || "");
   const [content, setContent] = useState(chapter.content || "");
   const [saveState, setSaveState] = useState("已保存");
@@ -244,6 +262,12 @@ function Editor({ projectId, chapter, onLocalChange }) {
   );
 
   useEffect(() => () => clearTimeout(saveTimer.current), []);
+
+  // 细纲 → 续写 handoff: a handed-in directive prefills 方向指引
+  useEffect(() => {
+    if (directive) setInstruction(directive);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [directiveNonce]);
 
   useEffect(() => {
     if (streamRef.current)

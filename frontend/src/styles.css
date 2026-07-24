@@ -450,6 +450,60 @@ input, textarea, select {
 }
 .slip .slip-body strong { color: var(--paper); font-weight: 600; }
 
+/* 细纲卡 (compose-outline) */
+.muse .outline-card {
+  background: var(--night-2);
+  border: 1px solid var(--night-3);
+  border-radius: 5px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.muse .outline-dir {
+  font-family: var(--serif);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--paper);
+  line-height: 1.6;
+  margin-bottom: 8px;
+  padding-left: 8px;
+  border-left: 3px solid var(--cinnabar);
+}
+.muse .outline-fields { margin: 0 0 8px; }
+.muse .outline-fields > div {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.muse .outline-fields dt {
+  flex: none;
+  width: 3.5em;
+  color: var(--cinnabar);
+  letter-spacing: 1px;
+}
+.muse .outline-fields dd { margin: 0; color: var(--mist); }
+.muse .outline-beats {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  font-size: 12px;
+  color: var(--mist);
+  line-height: 1.8;
+}
+.muse .outline-beats li { margin-bottom: 2px; }
+.muse .outline-edit {
+  width: 100%;
+  background: var(--night);
+  border: 1px solid var(--night-3);
+  border-radius: 4px;
+  padding: 8px 10px;
+  color: var(--paper);
+  font-size: 13px;
+  line-height: 1.7;
+  resize: vertical;
+  margin: 4px 0 8px;
+}
+
 /* 剧情参谋 (compose-hints) */
 .muse .counsel-org {
   background: var(--cinnabar-soft);

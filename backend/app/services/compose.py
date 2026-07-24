@@ -1,22 +1,21 @@
 # -*- coding: utf-8 -*-
-"""剧情参谋 (compose-hints) — retrieval-driven plot counsel.
+"""细纲生成 (compose-outline) — retrieval-grounded execution outlines.
 
-The clue pane's old mode ("one line in, top-k similar chunks out") answers
-"which entries are similar", but the author's real question is "where should
-this scene go". This service upgrades retrieval output into counsel:
+The clue pane used to be a passive advisor (which settings are similar, which
+motif to lean on) — but "give ideas for what's next" is already what 续写 does
+by retrieving and using settings, and "recover foreshadowing" is what the 伏笔
+manager does. So the pane is repurposed into the missing planning layer:
 
-  input   a fragment of actual prose (not a one-line summary)
-  step 1  retrieve facts through the *hints* channel (settings/threads only —
-          style samples and verbatim quotes must not intrude here)
-  step 2  retrieve literary 素材 (factual knowledge: themes, plot synopses)
-  step 3  an LLM organises the hits into a structured brief:
-            drivers    — what each fact could push forward at this point
-            directions — which motif/atmosphere each material suggests
-            organization — one integrated "which way to flow" suggestion
-          The LLM may only reference retrieved hits by index — it organises
-          evidence, it does not invent sources (the project's core thesis).
+  input   a fragment of actual prose (the current draft's tail)
+  step 1  retrieve facts through the *hints* channel (settings / characters /
+          open foreshadowing — no style samples, no verbatim quotes)
+  step 2  an LLM drafts N editable EXECUTION outlines for the next stretch,
+          each specifying: 走向 / 视角调度 / 角色入场 / 设定引出 / 节拍,
+          grounded in the retrieved hits (referenced by index, never invented).
 
-Raw hits ride along in the response for the collapsible debug view.
+The author edits an outline, then hands it to 续写 or 仿写 as the direction —
+this fills the gap between "an idea" and "prose": an editable plan in between.
+破壁 stays for divergent ideation; this is convergent staging.
 """
 from __future__ import annotations
 
@@ -26,23 +25,24 @@ import re
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import llm
-from app.schemas.compose import ComposeHintsResponse, DirectionHint, DriverHint
-from app.services import literary, retrieval
+from app.schemas.compose import ComposeOutlineResponse, OutlineOption
+from app.services import retrieval
 
 _SYSTEM = (
-    "你是长篇小说作者的剧情参谋。作者给你一段正文片段，以及两组检索命中：\n"
-    "【设定命中】——这个故事已确立的角色/世界规则/未回收伏笔；\n"
-    "【素材命中】——文学素材库里主题相关的知识（母题、结构、氛围参照）。\n\n"
-    "你的任务不是复述这些条目，而是回答：在这段正文的当下，它们各自能推动什么。\n"
-    '只输出 JSON：{\n'
-    '  "drivers": [{"ref": 设定编号, "suggestion": "此设定在此处能驱动什么，一句话，具体到情节动作"}],\n'
-    '  "directions": [{"ref": 素材编号, "suggestion": "这段可以往该母题/氛围的哪个方向流动，一句话"}],\n'
-    '  "organization": "两三句话的整合建议：让以上元素往同一个方向流动的组织方式"\n'
-    "}\n"
-    "规则：不相关的命中直接省略，不硬凑；drivers 至多 4 条、directions 至多 2 条；"
-    "建议要具体到这段正文的情境，不要写通用写作建议；"
-    "每条 suggestion 只能谈它 ref 所指向的那一条命中，"
-    "不得在建议文本里引入编号之外的作品、作者或设定名。"
+    "你是长篇小说作者的剧情排布助手。作者给你一段正文片段和一组【设定命中】"
+    "（已确立的角色 / 世界规则 / 未回收伏笔）。请为接下来的一段剧情草拟"
+    "{n} 条不同的【执行细纲】——不是发散的走向分支，而是把这一段落如何写出来"
+    "的具体排布。每条细纲必须包含：\n"
+    "· direction：一句话走向（这条细纲把故事推到哪一步）\n"
+    "· pov：视角调度（用谁的视角、何时切换、为何这样切）\n"
+    "· entrances：角色入场（哪些角色登场、以什么方式进来）\n"
+    "· reveals：设定引出（哪条设定/规则/伏笔在此浮现、如何自然带出而非硬塞）\n"
+    "· beats：2-4 个具体节拍（有序的小事件）\n"
+    "· refs：这条细纲用到的设定编号数组（只能引用给定编号）\n\n"
+    '只输出 JSON：{"options":[{"direction":"...","pov":"...","entrances":"...",'
+    '"reveals":"...","beats":["...","..."],"refs":[0,2]}]}\n'
+    "规则：细纲之间要有实质差异（视角/入场/节奏不同）；每条都要能直接指导写作，"
+    "具体到这段正文的情境，不写通用建议；设定引出必须基于给定的设定命中，不得虚构。"
 )
 
 
@@ -56,77 +56,52 @@ def _parse(raw: str) -> dict:
         return {}
 
 
-async def compose_hints(
+async def compose_outline(
     db: AsyncSession,
     project_id: int,
     fragment: str,
+    num_outlines: int = 2,
     top_k_settings: int = 6,
-    top_k_literary: int = 4,
-) -> ComposeHintsResponse:
+) -> ComposeOutlineResponse:
     chunks = await retrieval.retrieve_settings(
         db, project_id, fragment, channel="hints", top_k=top_k_settings
     )
-    quotes = await literary.retrieve_quotes(
-        db, fragment, top_k=top_k_literary, library="素材"
-    )
-
     settings_block = "\n".join(
         f"[设定{i}] ({c.source_type}) {c.content}" for i, c in enumerate(chunks)
-    ) or "（无命中）"
-    literary_block = "\n".join(
-        f"[素材{i}] 《{q.work_title}》{q.author}·{q.knowledge_type}：{q.content}"
-        for i, q in enumerate(quotes)
-    ) or "（无命中）"
+    ) or "（无命中；可基于片段本身排布，设定引出留空）"
 
     raw = await llm.complete(
         [
-            {"role": "system", "content": _SYSTEM},
+            {"role": "system", "content": _SYSTEM.replace("{n}", str(num_outlines))},
             {
                 "role": "user",
-                "content": (
-                    f"【正文片段】\n{fragment}\n\n"
-                    f"【设定命中】\n{settings_block}\n\n"
-                    f"【素材命中】\n{literary_block}"
-                ),
+                "content": f"【正文片段】\n{fragment}\n\n【设定命中】\n{settings_block}",
             },
         ],
-        temperature=0.4,
+        temperature=0.6,
     )
     data = _parse(raw)
 
-    drivers = []
-    for d in data.get("drivers", []):
-        i = d.get("ref")
-        if isinstance(i, int) and 0 <= i < len(chunks) and d.get("suggestion"):
-            c = chunks[i]
-            drivers.append(
-                DriverHint(
-                    source_type=c.source_type,
-                    content=c.content,
-                    score=c.score,
-                    suggestion=str(d["suggestion"]),
-                )
+    options: list[OutlineOption] = []
+    for o in data.get("options", []):
+        refs = o.get("refs", [])
+        grounded = [
+            chunks[i].content
+            for i in refs
+            if isinstance(i, int) and 0 <= i < len(chunks)
+        ]
+        beats = [str(b) for b in o.get("beats", []) if str(b).strip()]
+        if not o.get("direction"):
+            continue
+        options.append(
+            OutlineOption(
+                direction=str(o.get("direction", "")),
+                pov=str(o.get("pov", "")),
+                entrances=str(o.get("entrances", "")),
+                reveals=str(o.get("reveals", "")),
+                beats=beats,
+                grounded=grounded,
             )
-    directions = []
-    for d in data.get("directions", []):
-        i = d.get("ref")
-        if isinstance(i, int) and 0 <= i < len(quotes) and d.get("suggestion"):
-            q = quotes[i]
-            directions.append(
-                DirectionHint(
-                    work_title=q.work_title,
-                    author=q.author,
-                    knowledge_type=q.knowledge_type,
-                    content=q.content,
-                    score=q.score,
-                    suggestion=str(d["suggestion"]),
-                )
-            )
+        )
 
-    return ComposeHintsResponse(
-        drivers=drivers,
-        directions=directions,
-        organization=str(data.get("organization", "")) or "（参谋输出解析失败，请重试）",
-        raw_settings=chunks,
-        raw_literary=quotes,
-    )
+    return ComposeOutlineResponse(options=options, raw_settings=chunks)
