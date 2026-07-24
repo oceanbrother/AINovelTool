@@ -478,6 +478,28 @@ input, textarea, select {
 .muse .debug-view summary:hover { color: var(--cinnabar); }
 
 /* pane shared bits */
+.muse .clue-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 4px 0 10px;
+}
+.muse .clue-strip-label {
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--cinnabar);
+}
+.muse .clue-chip {
+  font-size: 12px;
+  color: var(--mist);
+  background: var(--night-2);
+  border-left: 2px solid var(--cinnabar);
+  border-radius: 2px;
+  padding: 2px 8px;
+  cursor: default;
+}
+
 .muse .facet-row {
   display: flex;
   flex-wrap: wrap;

@@ -718,7 +718,7 @@ function IdiomsPane() {
       {pane.error && <p className="error">{pane.error}</p>}
       {pane.loading && <p className="loading">在成语库里挑选…</p>}
       {pane.items && pane.items.length === 0 && (
-        <p className="empty">成语库还是空的。先运行 import_idioms.py 灌入数据。</p>
+        <p className="empty">没有匹配的成语。换一种画面描述再试试。</p>
       )}
       {pane.items?.map((s) => (
         <div className="slip" key={s.text} style={{ "--slip-heat": Math.max(s.score, 0.25) }}>
@@ -849,9 +849,14 @@ function BranchesPane({ projectId, chapter }) {
         </div>
       ))}
       {pane.items?.length > 0 && pane.items[0].clues?.length > 0 && (
-        <p className="pane-hint">
-          依据：{pane.items[0].clues.map((c) => c.content.slice(0, 10)).join(" / ")}
-        </p>
+        <div className="clue-strip" aria-label="分支依据的设定">
+          <span className="clue-strip-label">依据</span>
+          {pane.items[0].clues.map((c, i) => (
+            <span className="clue-chip" key={i} title={c.content}>
+              {c.content.slice(0, 14)}
+            </span>
+          ))}
+        </div>
       )}
       {pane.items === null && !pane.loading && (
         <p className="empty">
@@ -873,6 +878,14 @@ function ImitatePane({ projectId, chapter, onAppend }) {
   const [note, setNote] = useState(null);
   const [stage, setStage] = useState(null); // current SSE phase during a run
   const [liveAttempts, setLiveAttempts] = useState([]); // scorecards as they land
+  const [hero, setHero] = useState("主角"); // sample name for the placeholder
+
+  useEffect(() => {
+    api
+      .listCharacters(projectId)
+      .then((cs) => cs[0] && setHero(cs[0].name))
+      .catch(() => {});
+  }, [projectId]);
 
   const accept = async () => {
     if (!result) return;
@@ -938,7 +951,7 @@ function ImitatePane({ projectId, chapter, onAppend }) {
         className="ingest-text"
         rows={2}
         value={instruction}
-        placeholder="方向指引，如：写陆沉赶到医院，150字左右"
+        placeholder={`方向指引，如：写${hero}赶到现场，150字左右`}
         onChange={(e) => setInstruction(e.target.value)}
       />
       <div className="ingest-actions">

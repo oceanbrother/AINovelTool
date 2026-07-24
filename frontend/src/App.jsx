@@ -78,11 +78,23 @@ function Gate({ onCreate }) {
 function Workspace({ projectId }) {
   const [chapters, setChapters] = useState([]);
   const [chapterId, setChapterId] = useState(null);
-  // resizable three-pane layout: the paper shouldn't monopolise the stage
-  const [railW, setRailW] = useState(200);
-  const [museW, setMuseW] = useState(380);
+  // resizable three-pane layout: the paper shouldn't monopolise the stage.
+  // Widths persist across reloads (localStorage), keyed globally not per-project.
+  const [railW, setRailW] = useState(
+    () => Number(localStorage.getItem("railW")) || 200
+  );
+  const [museW, setMuseW] = useState(
+    () => Number(localStorage.getItem("museW")) || 380
+  );
   const [rev, setRev] = useState(0); // bumps to remount Editor after external append
   const chapter = chapters.find((c) => c.id === chapterId) || null;
+
+  useEffect(() => {
+    localStorage.setItem("railW", String(railW));
+  }, [railW]);
+  useEffect(() => {
+    localStorage.setItem("museW", String(museW));
+  }, [museW]);
 
   const dragStart = (side) => (e) => {
     e.preventDefault();
