@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -97,15 +98,23 @@ _IMITATE_EXTRA = (
 )
 
 
-async def imitate(
+async def imitate_stream(
     db: AsyncSession,
     chapter: Chapter,
     instruction: str | None,
     previous_draft: str | None,
     feedback: str | None,
     max_attempts: int = 2,
-) -> tuple[str, list[ImitateAttempt], list]:
-    """Returns (best_draft, attempt_reports, clues)."""
+) -> AsyncGenerator[tuple[str, object], None]:
+    """The self-check loop as a stage-emitting generator.
+
+    The loop takes 1–3 min (a generate + a judge call per attempt), so instead
+    of a black-box wait the UI gets narrated progress. Yields:
+      ("stage", str)               human-readable current phase
+      ("attempt", ImitateAttempt)  one scorecard as each draft is judged
+      ("result", (draft, attempts, clues))   final payload
+    """
+    yield "stage", "检索文风样本与设定"
     query = (chapter.content[-500:] + " " + (instruction or "")).strip()
     context, chunks, styles = await generation.build_imitation_context(
         db, chapter, query or chapter.title or ""
@@ -126,6 +135,7 @@ async def imitate(
     best_key = -999.0
     notes = None
     for i in range(max_attempts):
+        yield "stage", (f"生成第 {i + 1} 稿" if notes is None else f"按裁判意见重写第 {i + 1} 稿")
         user = base_user if notes is None else base_user + _IMITATE_EXTRA.format(feedback=notes)
         draft = await llm.complete(
             [
@@ -133,6 +143,7 @@ async def imitate(
                 {"role": "user", "content": user},
             ]
         )
+        yield "stage", f"第 {i + 1} 稿自检中（异模型裁判 + 复述检测）"
         overlap = ngram_overlap(draft, style_refs) if style_refs else 0.0
         if style_refs:
             verdict = await judge_draft(draft, style_refs)
@@ -143,16 +154,16 @@ async def imitate(
             and verdict["style_score"] >= STYLE_SCORE_MIN
             and verdict["ai_flavor"] <= AI_FLAVOR_MAX
         )
-        attempts.append(
-            ImitateAttempt(
-                attempt=i + 1,
-                style_score=verdict["style_score"],
-                ai_flavor=verdict["ai_flavor"],
-                ngram_overlap=round(overlap, 4),
-                passed=passed,
-                notes=verdict["notes"],
-            )
+        attempt = ImitateAttempt(
+            attempt=i + 1,
+            style_score=verdict["style_score"],
+            ai_flavor=verdict["ai_flavor"],
+            ngram_overlap=round(overlap, 4),
+            passed=passed,
+            notes=verdict["notes"],
         )
+        attempts.append(attempt)
+        yield "attempt", attempt
         # best = highest (style - ai_flavor); plagiarism failures ranked last
         key = (
             float(verdict["style_score"] - verdict["ai_flavor"])
@@ -165,4 +176,22 @@ async def imitate(
             break
         notes = verdict["notes"] or "文风贴合度不足，收紧句子节奏。"
 
-    return best_draft, attempts, chunks
+    yield "result", (best_draft, attempts, chunks)
+
+
+async def imitate(
+    db: AsyncSession,
+    chapter: Chapter,
+    instruction: str | None,
+    previous_draft: str | None,
+    feedback: str | None,
+    max_attempts: int = 2,
+) -> tuple[str, list[ImitateAttempt], list]:
+    """Non-streaming drainer over imitate_stream — for eval scripts and tests."""
+    result: tuple = ("", [], [])
+    async for kind, payload in imitate_stream(
+        db, chapter, instruction, previous_draft, feedback, max_attempts
+    ):
+        if kind == "result":
+            result = payload
+    return result

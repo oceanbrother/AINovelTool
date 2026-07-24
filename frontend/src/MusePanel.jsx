@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { api } from "./api.js";
+import { api, streamImitate } from "./api.js";
 
 // Three sections, each with focused windows:
 //   架构 — the world's skeleton: retrieval clues, material ingest, settings, threads
@@ -871,6 +871,8 @@ function ImitatePane({ projectId, chapter, onAppend }) {
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState(null);
   const [note, setNote] = useState(null);
+  const [stage, setStage] = useState(null); // current SSE phase during a run
+  const [liveAttempts, setLiveAttempts] = useState([]); // scorecards as they land
 
   const accept = async () => {
     if (!result) return;
@@ -898,6 +900,9 @@ function ImitatePane({ projectId, chapter, onAppend }) {
     }
     setBusy(true);
     setError(null);
+    setNote(null);
+    setStage("正在启动自检环…");
+    setLiveAttempts([]);
     try {
       const payload = {
         chapter_id: chapter.id,
@@ -908,12 +913,18 @@ function ImitatePane({ projectId, chapter, onAppend }) {
         payload.previous_draft = result.text;
         payload.feedback = feedback.trim();
       }
-      setResult(await api.imitate(projectId, payload));
+      setResult(null);
+      const final = await streamImitate(projectId, payload, {
+        onStage: (s) => setStage(s),
+        onAttempt: (a) => setLiveAttempts((prev) => [...prev, a]),
+      });
+      setResult(final);
       setFeedback("");
     } catch (err) {
       setError(err.message);
     } finally {
       setBusy(false);
+      setStage(null);
     }
   };
 
@@ -937,6 +948,25 @@ function ImitatePane({ projectId, chapter, onAppend }) {
       </div>
       {error && <p className="error">{error}</p>}
       {note && <p className="ok">{note}</p>}
+
+      {busy && (
+        <div className="imitate-progress">
+          <div className="stage-line">
+            <span className="stage-dot" />
+            {stage}
+          </div>
+          {liveAttempts.map((a) => (
+            <div className="attempt" key={a.attempt}>
+              <span className={a.passed ? "ok" : "warn"}>
+                第{a.attempt}稿 {a.passed ? "✓过检" : "未过检"}
+              </span>
+              <span>文风 {a.style_score}/10</span>
+              <span>AI味 {a.ai_flavor}/10</span>
+              <span>复述 {(a.ngram_overlap * 100).toFixed(1)}%</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {result && (
         <>

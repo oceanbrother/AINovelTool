@@ -554,6 +554,40 @@ input, textarea, select {
 }
 .muse .file-btn { cursor: pointer; }
 
+.muse .imitate-progress {
+  background: var(--night-2);
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.muse .stage-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--paper);
+  margin-bottom: 6px;
+}
+.muse .stage-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cinnabar);
+  animation: pulse 1s ease-in-out infinite;
+  flex: none;
+}
+@keyframes pulse { 50% { opacity: 0.25; } }
+.muse .imitate-progress .attempt {
+  display: flex;
+  gap: 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--mist);
+  margin-top: 4px;
+}
+.muse .imitate-progress .attempt .ok { color: #7fb069; }
+.muse .imitate-progress .attempt .warn { color: var(--cinnabar); }
+
 .muse .imitate-report {
   background: var(--night-2);
   border-radius: 4px;

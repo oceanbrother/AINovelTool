@@ -42,8 +42,6 @@ export const api = {
   deleteStyleSample: (pid, sid) =>
     json("DELETE", `/projects/${pid}/style-samples/${sid}`),
 
-  imitate: (pid, payload) =>
-    json("POST", `/projects/${pid}/generate/imitate`, payload),
 
   listForeshadowing: (pid) => json("GET", `/projects/${pid}/foreshadowing`),
   createForeshadowing: (pid, payload) =>
@@ -112,4 +110,44 @@ export async function streamContinue(pid, chapterId, instruction, onToken, signa
       }
     }
   }
+}
+
+// 仿写自检环 over SSE: onStage(text) per phase, onAttempt(scorecard) per draft.
+// Resolves with the final ImitateResponse ({text, attempts, clues}).
+export async function streamImitate(pid, payload, { onStage, onAttempt } = {}) {
+  const resp = await fetch(`/projects/${pid}/generate/imitate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) throw new Error(`${resp.status} ${await resp.text()}`);
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let event = "message";
+  let result = null;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let idx;
+    while ((idx = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, idx).replace(/\r$/, "");
+      buffer = buffer.slice(idx + 1);
+      if (line.startsWith("event:")) {
+        event = line.slice(6).trim();
+      } else if (line.startsWith("data:")) {
+        const data = line.slice(5).replace(/^ /, "");
+        if (event === "stage") onStage?.(data);
+        else if (event === "attempt") onAttempt?.(JSON.parse(data));
+        else if (event === "result") result = JSON.parse(data);
+        else if (event === "error") throw new Error(data);
+        else if (event === "done") return result;
+      }
+    }
+  }
+  return result;
 }

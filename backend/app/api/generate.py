@@ -64,28 +64,47 @@ async def continue_writing(project_id: int, payload: ContinueRequest):
     return EventSourceResponse(event_stream())
 
 
-@router.post("/imitate", response_model=ImitateResponse)
-async def imitate(
-    project_id: int,
-    payload: ImitateRequest,
-    db: AsyncSession = Depends(get_session),
-):
+@router.post("/imitate")
+async def imitate(project_id: int, payload: ImitateRequest):
     """仿写模式 — generate → self-check (judge + plagiarism gate) → rewrite.
 
-    Non-streaming by design: every draft the author sees has already passed
-    (or best-of-failed) the self-check loop. Slower than 续写, but vetted."""
-    chapter = await db.get(Chapter, payload.chapter_id)
-    if chapter is None or chapter.project_id != project_id:
-        raise HTTPException(404, "chapter not found")
-    text, attempts, clues = await imitation.imitate(
-        db,
-        chapter,
-        payload.instruction,
-        payload.previous_draft,
-        payload.feedback,
-        payload.max_attempts,
-    )
-    return ImitateResponse(text=text, attempts=attempts, clues=clues)
+    Streams the self-check loop's progress over SSE (the loop takes 1–3 min):
+      event: stage    — human-readable current phase
+      event: attempt  — one scorecard as each draft is judged
+      event: result   — final ImitateResponse JSON
+    Every draft surfaced has already run the vetting loop; SSE just narrates it.
+    """
+
+    async def event_stream():
+        async with AsyncSessionLocal() as db:
+            chapter = await db.get(Chapter, payload.chapter_id)
+            if chapter is None or chapter.project_id != project_id:
+                yield {"event": "error", "data": "chapter not found"}
+                return
+            try:
+                async for kind, data in imitation.imitate_stream(
+                    db,
+                    chapter,
+                    payload.instruction,
+                    payload.previous_draft,
+                    payload.feedback,
+                    payload.max_attempts,
+                ):
+                    if kind == "stage":
+                        yield {"event": "stage", "data": data}
+                    elif kind == "attempt":
+                        yield {"event": "attempt", "data": data.model_dump_json()}
+                    elif kind == "result":
+                        text, attempts, clues = data
+                        resp = ImitateResponse(
+                            text=text, attempts=attempts, clues=clues
+                        )
+                        yield {"event": "result", "data": resp.model_dump_json()}
+                yield {"event": "done", "data": ""}
+            except Exception as exc:  # surface upstream errors to the client
+                yield {"event": "error", "data": str(exc)}
+
+    return EventSourceResponse(event_stream())
 
 
 @router.post("/breakthrough", response_model=BreakthroughResponse)
