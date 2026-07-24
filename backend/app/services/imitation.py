@@ -20,9 +20,11 @@ author's own notes instead of a cold generation.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from collections.abc import AsyncGenerator
+from statistics import median
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,11 +35,16 @@ from app.schemas.generation import ImitateAttempt
 from app.services import generation
 
 # --- gates ---------------------------------------------------------------------
-
+# Calibrated against ground truth (eval/run_judge_scale.py): real human prose
+# judged against held-out real prose averages style 7.4 (range 5–9) and only
+# clears 7 about 7/10 of the time — so a >=7 single-shot bar is stricter than
+# the author's own text, and the judge is high-variance. Hence: floor at 6, and
+# denoise each verdict by taking the median of JUDGE_SAMPLES calls.
 NGRAM_N = 8            # char n-gram size: 8+ shared chars ≈ verbatim lift
 NGRAM_MAX_OVERLAP = 0.05
-STYLE_SCORE_MIN = 7    # judge's style-match floor (1-10)
-AI_FLAVOR_MAX = 4      # judge's AI-flavor ceiling (1-10, 10 = reeks of AI)
+STYLE_SCORE_MIN = 6    # style-match floor (calibrated to real-text performance)
+AI_FLAVOR_MAX = 4      # AI-flavor ceiling (1-10, 10 = reeks of AI)
+JUDGE_SAMPLES = 3      # median over N judge calls to cut the judge's variance
 
 
 def ngram_overlap(text: str, samples: list[str], n: int = NGRAM_N) -> float:
@@ -88,6 +95,20 @@ async def judge_draft(draft: str, style_refs: list[str]) -> dict:
         "ai_flavor": int(data.get("ai_flavor", 10)),
         "notes": str(data.get("notes", "")),
     }
+
+
+async def judge_draft_stable(draft: str, style_refs: list[str]) -> dict:
+    """Median over JUDGE_SAMPLES judge calls — the judge is high-variance
+    (same input can swing style 5↔9), so a single call is an unreliable gate.
+    Returns median style/ai and the notes from the run closest to the median."""
+    verdicts = await asyncio.gather(
+        *(judge_draft(draft, style_refs) for _ in range(JUDGE_SAMPLES))
+    )
+    style = int(median(v["style_score"] for v in verdicts))
+    ai = int(median(v["ai_flavor"] for v in verdicts))
+    # notes from the verdict whose style is nearest the median (most typical)
+    rep = min(verdicts, key=lambda v: abs(v["style_score"] - style))
+    return {"style_score": style, "ai_flavor": ai, "notes": rep["notes"]}
 
 
 # --- the loop ------------------------------------------------------------------
@@ -143,10 +164,10 @@ async def imitate_stream(
                 {"role": "user", "content": user},
             ]
         )
-        yield "stage", f"第 {i + 1} 稿自检中（异模型裁判 + 复述检测）"
+        yield "stage", f"第 {i + 1} 稿自检中（异模型裁判 ×{JUDGE_SAMPLES} 取中位 + 复述检测）"
         overlap = ngram_overlap(draft, style_refs) if style_refs else 0.0
         if style_refs:
-            verdict = await judge_draft(draft, style_refs)
+            verdict = await judge_draft_stable(draft, style_refs)
         else:
             verdict = {"style_score": 0, "ai_flavor": 10, "notes": "项目内无文风样本"}
         passed = (
