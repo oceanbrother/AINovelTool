@@ -34,6 +34,7 @@ rules from retrieval hits — every detail has a source.*
 | Style imitation blind eval | **7 wins / 1 tie / 0 losses** (n=8, counterbalanced LLM judge) |
 | Imitation self-check loop | judge feedback lifts style **2→6** in one rewrite; plagiarism gate at 0.0 overlap |
 | Judge calibration | real-vs-imitation blind discrimination **5/6** — the judge's verdicts carry weight |
+| Precision-mode constraint fulfilment (A/B) | **plain-continue 58.9% → precision 93.0%** (+34 pts; per-constraint must-include/must-not check, n=3) |
 
 ## Architecture
 
@@ -72,6 +73,23 @@ the generator "remembers" them), a **rolling summary** to bound long-novel conte
 **style imitation** (style samples in the vector store; facts and voice retrieved on
 separate paths, samples injected adjacent to the generation point — borrow the voice,
 never the content).
+
+### Planning-strength ladder · precision mode (generation-side lift)
+
+Generation shouldn't have a single "strength". Planning strength is a ladder:
+
+- **Exploration** (continue / breakthrough): light planning, high freedom.
+- **Precision**: N divergent directions (varied across 6 axes — conflict source /
+  agency / reveal order / emotion / turn / open question) → author picks or merges →
+  a structured **ScenePlan** whose `must_include` / `must_not` / `end_state` are
+  **objectively checkable** constraints → plan-conditioned draft → **per-constraint
+  verification**, auto-rewriting on any miss.
+
+This upgrades the imitation self-check loop from "check the voice" to "**check an
+explicit plan**" — a genuine agentic loop: `plan → generate → verify → decide →
+rewrite`. Verification is an objective present/absent checklist, not another
+high-variance 1–10 score. Measured (same chapter, same direction): constraint
+fulfilment **plain-continue 58.9% → precision 93.0%**.
 
 ## v1.1 multi-source retrieval
 
@@ -137,8 +155,9 @@ Every number above is reproducible — see [backend/eval/README.md](backend/eval
 | Idiom hallucination A/B | `eval/run_idiom_hallucination_eval.py` |
 | Style imitation blind eval | `eval/run_style_eval.py` |
 | Judge calibration (real vs imitation) | `eval/run_judge_calibration.py` |
+| Precision constraint fulfilment A/B (59%→93%) | `eval/run_refine_ablation.py` |
 
-> Environment: Windows 11 / CPU inference (bge-m3) / DeepSeek deepseek-chat / pgvector HNSW.
+> Environment: Windows 11 / CPU inference (bge-m3) / DeepSeek V4 (generate deepseek-v4-flash · judge deepseek-v4-pro) / pgvector HNSW.
 
 ## Data model
 
@@ -159,6 +178,9 @@ Schema: [backend/scripts/init_pgvector.sql](backend/scripts/init_pgvector.sql).
 - [x] Private style pipeline: epub ingestion (source data never enters the repo) +
       imitation self-check loop (cross-model judge, AI-flavor scoring, n-gram
       plagiarism gate, feedback rewrite) + judge calibration 5/6
+- [x] Precision mode (generation-side lift): candidates → ScenePlan (checkable
+      constraints) → constraint-verified write + rewrite loop; fulfilment **59%→93%**
+      (`run_refine_ablation.py`, agentic loop: plan→generate→verify→rewrite)
 
 ---
 
