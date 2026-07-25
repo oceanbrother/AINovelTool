@@ -41,8 +41,9 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.8
     llm_max_tokens: int = 2048
     # judge for the imitation self-check loop — deliberately a DIFFERENT model
-    # from the generator to avoid LLM self-preference bias
-    llm_judge_model: str = "deepseek-reasoner"
+    # from the generator to avoid LLM self-preference bias. (DeepSeek retired
+    # -reasoner for the V4 line; pro is the careful successor.)
+    llm_judge_model: str = "deepseek-v4-pro"
 
     # --- Retrieval ---
     retrieval_top_k: int = 6
