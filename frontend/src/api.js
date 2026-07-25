@@ -69,6 +69,15 @@ export const api = {
       num_branches: n,
     }),
 
+  // 精修 ①②：候选走向 与 场景计划（③ /refine/write 走 SSE，见下方）
+  refineCandidates: (pid, fragment, n = 4) =>
+    json("POST", `/projects/${pid}/generate/refine/candidates`, {
+      fragment,
+      num_candidates: n,
+    }),
+  refinePlan: (pid, fragment, candidate) =>
+    json("POST", `/projects/${pid}/generate/refine/plan`, { fragment, candidate }),
+
   suggestIdioms: (scene) => json("POST", "/idioms/suggest", { scene }),
   literaryQuotes: (query, category, library) =>
     json("POST", "/literary/quotes", {
@@ -121,6 +130,47 @@ export async function streamContinue(pid, chapterId, instruction, onToken, signa
 // Resolves with the final ImitateResponse ({text, attempts, clues}).
 export async function streamImitate(pid, payload, { onStage, onAttempt } = {}) {
   const resp = await fetch(`/projects/${pid}/generate/imitate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) throw new Error(`${resp.status} ${await resp.text()}`);
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let event = "message";
+  let result = null;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let idx;
+    while ((idx = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, idx).replace(/\r$/, "");
+      buffer = buffer.slice(idx + 1);
+      if (line.startsWith("event:")) {
+        event = line.slice(6).trim();
+      } else if (line.startsWith("data:")) {
+        const data = line.slice(5).replace(/^ /, "");
+        if (event === "stage") onStage?.(data);
+        else if (event === "attempt") onAttempt?.(JSON.parse(data));
+        else if (event === "result") result = JSON.parse(data);
+        else if (event === "error") throw new Error(data);
+        else if (event === "done") return result;
+      }
+    }
+  }
+  return result;
+}
+
+// 精修 ③ 校验写循环 over SSE: onStage(text) per phase, onAttempt(scorecard) with
+// per-constraint checks. Resolves with the final RefineWriteResponse
+// ({text, attempts, clues}). Mirrors streamImitate's wire handling.
+export async function streamRefineWrite(pid, payload, { onStage, onAttempt } = {}) {
+  const resp = await fetch(`/projects/${pid}/generate/refine/write`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

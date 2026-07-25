@@ -723,6 +723,86 @@ input, textarea, select {
   overflow-y: auto;
 }
 
+/* 创作 · 精修 (refine) */
+.muse .refine-cand {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: var(--night-2);
+  border: 1px solid var(--night-3);
+  border-radius: 5px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.muse .refine-cand.picked {
+  border-color: var(--cinnabar);
+  background: var(--cinnabar-soft);
+}
+.muse .refine-cand > input {
+  margin-top: 4px;
+  flex: none;
+  accent-color: var(--cinnabar);
+}
+.muse .refine-cand-body { flex: 1; min-width: 0; }
+.muse .refine-cand-sum {
+  font-family: var(--serif);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--paper);
+  line-height: 1.6;
+  margin-bottom: 6px;
+}
+
+.muse .refine-plan {
+  background: var(--night-2);
+  border: 1px solid var(--night-3);
+  border-radius: 5px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.muse .refine-plan .slip-tag {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--cinnabar);
+  background: var(--cinnabar-soft);
+  border-radius: 3px;
+  padding: 2px 8px;
+  margin-bottom: 10px;
+}
+.muse .refine-field { display: block; margin-bottom: 8px; }
+.muse .refine-field > span {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--cinnabar);
+  margin-bottom: 3px;
+}
+.muse .refine-field textarea {
+  width: 100%;
+  background: var(--night);
+  border: 1px solid var(--night-3);
+  border-radius: 4px;
+  padding: 6px 9px;
+  color: var(--paper);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.7;
+  resize: vertical;
+}
+
+.muse .attempt-block { margin-bottom: 8px; }
+.muse .refine-checks {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.muse .refine-checks li.ok { color: #7fb069; }
+.muse .refine-checks li.warn { color: var(--cinnabar); }
+
 .muse .thread-form select {
   background: var(--night-2);
   border: 1px solid var(--night-3);

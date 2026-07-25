@@ -15,7 +15,15 @@ from app.schemas.generation import (
     ImitateRequest,
     ImitateResponse,
 )
-from app.services import generation, imitation
+from app.schemas.refine import (
+    RefineCandidatesRequest,
+    RefineCandidatesResponse,
+    RefinePlanRequest,
+    RefinePlanResponse,
+    RefineWriteRequest,
+    RefineWriteResponse,
+)
+from app.services import generation, imitation, refine
 
 router = APIRouter(prefix="/projects/{project_id}/generate", tags=["generate"])
 
@@ -121,3 +129,76 @@ async def breakthrough(
         db, chapter, payload.state, payload.num_branches
     )
     return BreakthroughResponse(branches=branches, clues=clues)
+
+
+# --- 精修模式 (refine) ---------------------------------------------------------
+# Three stages split by two author decision points (pick a candidate, edit the
+# plan), so these are plain JSON calls; only the final /refine/write streams.
+
+@router.post("/refine/candidates", response_model=RefineCandidatesResponse)
+async def refine_candidates(
+    project_id: int,
+    payload: RefineCandidatesRequest,
+    db: AsyncSession = Depends(get_session),
+):
+    """① N 条差异化候选走向 + 程序侧重复检测旗标。"""
+    return await refine.compose_candidates(
+        db,
+        project_id,
+        payload.fragment,
+        payload.num_candidates,
+        payload.top_k_settings,
+    )
+
+
+@router.post("/refine/plan", response_model=RefinePlanResponse)
+async def refine_plan(
+    project_id: int,
+    payload: RefinePlanRequest,
+    db: AsyncSession = Depends(get_session),
+):
+    """② 把选中候选扩成可编辑的场景计划（+ 场景标签）。"""
+    return await refine.expand_plan(
+        db,
+        project_id,
+        payload.fragment,
+        payload.candidate,
+        payload.top_k_settings,
+    )
+
+
+@router.post("/refine/write")
+async def refine_write(project_id: int, payload: RefineWriteRequest):
+    """③ 依场景计划生成 → 校验必须出现/不能发生 → 不达标带失败约束重写。
+
+    Streams over SSE like /imitate (the loop takes minutes):
+      event: stage    — current phase
+      event: attempt  — one scorecard (constraint checks) per draft
+      event: result   — final RefineWriteResponse JSON
+    """
+
+    async def event_stream():
+        async with AsyncSessionLocal() as db:
+            chapter = await db.get(Chapter, payload.chapter_id)
+            if chapter is None or chapter.project_id != project_id:
+                yield {"event": "error", "data": "chapter not found"}
+                return
+            try:
+                async for kind, data in refine.refine_write_stream(
+                    db, chapter, payload.plan, payload.instruction, payload.max_attempts
+                ):
+                    if kind == "stage":
+                        yield {"event": "stage", "data": data}
+                    elif kind == "attempt":
+                        yield {"event": "attempt", "data": data.model_dump_json()}
+                    elif kind == "result":
+                        text, attempts, clues = data
+                        resp = RefineWriteResponse(
+                            text=text, attempts=attempts, clues=clues
+                        )
+                        yield {"event": "result", "data": resp.model_dump_json()}
+                yield {"event": "done", "data": ""}
+            except Exception as exc:  # surface upstream errors to the client
+                yield {"event": "error", "data": str(exc)}
+
+    return EventSourceResponse(event_stream())

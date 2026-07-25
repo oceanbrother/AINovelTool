@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { api, streamImitate } from "./api.js";
+import { api, streamImitate, streamRefineWrite } from "./api.js";
 
 // Three sections, each with focused windows:
 //   架构 — the static library: material ingest, settings, threads
@@ -30,6 +30,7 @@ const SECTIONS = [
       { key: "branches", label: "破壁" },
       { key: "outline", label: "细纲" },
       { key: "imitate", label: "仿写" },
+      { key: "refine", label: "精修" },
     ],
   },
 ];
@@ -108,6 +109,9 @@ export default function MusePanel({
           directive={directive}
           directiveNonce={directiveNonce}
         />
+      )}
+      {tabKey === "refine" && (
+        <RefinePane projectId={projectId} chapter={chapter} onAppend={onAppend} />
       )}
     </aside>
   );
@@ -1124,6 +1128,329 @@ function ImitatePane({ projectId, chapter, onAppend, directive, directiveNonce }
             </button>
           </form>
         </>
+      )}
+    </div>
+  );
+}
+
+/* ---------- 创作 · 精修 ---------- */
+// The precision loop: multi-candidate → pick/merge → editable ScenePlan →
+// plan-conditioned write with a constraint-verified rewrite loop. Two author
+// decision points (pick a candidate, edit the plan) split it into three calls.
+
+const PLAN_FIELDS = [
+  ["goal", "本场目标"],
+  ["desire", "角色欲望"],
+  ["conflict", "冲突"],
+  ["info_shift", "信息变化"],
+  ["emotion_curve", "情绪曲线"],
+  ["end_state", "结尾状态"],
+];
+
+function RefinePane({ projectId, chapter, onAppend }) {
+  const [fragment, setFragment] = useState("");
+  const [candidates, setCandidates] = useState(null); // ① options
+  const [picked, setPicked] = useState({}); // index -> bool (merge set)
+  const [plan, setPlan] = useState(null); // ② editable ScenePlan
+  const [result, setResult] = useState(null); // ③ final draft + report
+  const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState(null);
+  const [liveAttempts, setLiveAttempts] = useState([]);
+  const [error, setError] = useState(null);
+  const [note, setNote] = useState(null);
+
+  const useChapterTail = () => {
+    if (chapter?.content) setFragment(chapter.content.slice(-300));
+  };
+
+  // ① 候选
+  const genCandidates = async () => {
+    if (fragment.trim().length < 10) {
+      setError("给我一段正文（至少十个字），而不是一句概括。");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setNote(null);
+    try {
+      const resp = await api.refineCandidates(projectId, fragment.trim(), 4);
+      setCandidates(resp.candidates);
+      setPicked({});
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggle = (i) => setPicked((p) => ({ ...p, [i]: !p[i] }));
+
+  // merge selected candidates client-side (author "把两个候选组合起来")
+  const mergeSelected = () => {
+    const sel = candidates.filter((_, i) => picked[i]);
+    if (sel.length === 0) return null;
+    if (sel.length === 1) return sel[0];
+    const join = (k) => [...new Set(sel.map((c) => c[k]).filter(Boolean))].join(" ／ ");
+    return {
+      summary: sel.map((c) => c.summary).join("；并且，"),
+      conflict_source: join("conflict_source"),
+      agency: join("agency"),
+      reveal_order: join("reveal_order"),
+      emotion_arc: join("emotion_arc"),
+      turn: join("turn"),
+      open_question: join("open_question"),
+      refs: [...new Set(sel.flatMap((c) => c.refs))],
+      grounded: [...new Set(sel.flatMap((c) => c.grounded))],
+      repetition: 0,
+      repetition_flag: false,
+    };
+  };
+
+  // ② 场景计划
+  const expandPlan = async () => {
+    const candidate = mergeSelected();
+    if (!candidate) {
+      setError("先勾选至少一条候选。");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const resp = await api.refinePlan(projectId, fragment.trim(), candidate);
+      setPlan(resp.plan);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setField = (k, v) => setPlan((p) => ({ ...p, [k]: v }));
+  const setList = (k, text) =>
+    setPlan((p) => ({
+      ...p,
+      [k]: text.split("\n").map((s) => s.trim()).filter(Boolean),
+    }));
+
+  // ③ 校验写作
+  const write = async () => {
+    if (!chapter) {
+      setError("先选择一个章节");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setNote(null);
+    setStage("正在启动校验写循环…");
+    setLiveAttempts([]);
+    try {
+      const final = await streamRefineWrite(
+        projectId,
+        { chapter_id: chapter.id, plan, instruction: null, max_attempts: 2 },
+        {
+          onStage: (s) => setStage(s),
+          onAttempt: (a) => setLiveAttempts((prev) => [...prev, a]),
+        }
+      );
+      setResult(final);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+      setStage(null);
+    }
+  };
+
+  const accept = async () => {
+    if (!result) return;
+    await onAppend?.(result.text);
+    // 精修稿以"约束达标"过检，非"语感范本"，故不自动内化为文风样本
+    setNote("已并入正文。");
+    setResult(null);
+    setPlan(null);
+    setCandidates(null);
+  };
+
+  return (
+    <div className="pane">
+      <p className="pane-hint">
+        <strong>精修</strong>：多候选走向 → 选 / 合并 → 场景计划（必须出现 / 不能发生）
+        → 依计划生成 → <strong>逐条核对约束</strong>，不达标自动重写。最慢也最稳，出精稿。
+      </p>
+
+      {/* ① 片段输入 */}
+      {!candidates && !plan && !result && (
+        <>
+          <textarea
+            className="ingest-text"
+            rows={4}
+            value={fragment}
+            placeholder="粘贴当前写到的正文片段…"
+            onChange={(e) => setFragment(e.target.value)}
+          />
+          <div className="ingest-actions">
+            <button className="btn ghost" onClick={useChapterTail} disabled={!chapter}>
+              取本章结尾
+            </button>
+            <button className="btn primary" onClick={genCandidates} disabled={busy}>
+              {busy ? "构思中…" : "生成候选走向"}
+            </button>
+          </div>
+        </>
+      )}
+      {error && <p className="error">{error}</p>}
+      {note && <p className="ok">{note}</p>}
+
+      {/* ① 候选列表（勾选可多选合并） */}
+      {candidates && !plan && !result && (
+        <>
+          {candidates.length === 0 && <p className="warn">没解析出候选，换段文字再试。</p>}
+          {candidates.map((c, i) => (
+            <label className={`refine-cand${picked[i] ? " picked" : ""}`} key={i}>
+              <input type="checkbox" checked={!!picked[i]} onChange={() => toggle(i)} />
+              <div className="refine-cand-body">
+                <div className="refine-cand-sum">
+                  {c.summary}
+                  {c.repetition_flag && (
+                    <span className="warn" title={`与已有章节相似度 ${c.repetition}`}>
+                      　· 疑似重复
+                    </span>
+                  )}
+                </div>
+                <dl className="outline-fields">
+                  <div><dt>冲突来源</dt><dd>{c.conflict_source}</dd></div>
+                  <div><dt>主/被动</dt><dd>{c.agency}</dd></div>
+                  <div><dt>揭示序</dt><dd>{c.reveal_order}</dd></div>
+                  <div><dt>情绪</dt><dd>{c.emotion_arc}</dd></div>
+                  <div><dt>转折</dt><dd>{c.turn}</dd></div>
+                  <div><dt>悬念</dt><dd>{c.open_question}</dd></div>
+                </dl>
+              </div>
+            </label>
+          ))}
+          <div className="ingest-actions">
+            <button
+              className="btn ghost"
+              onClick={() => {
+                setCandidates(null);
+                setPicked({});
+              }}
+            >
+              重来
+            </button>
+            <button className="btn primary" onClick={expandPlan} disabled={busy}>
+              {busy ? "排布中…" : "选中项 → 场景计划"}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ② 场景计划编辑 */}
+      {plan && !result && (
+        <div className="refine-plan">
+          {plan.scene_tag && <span className="slip-tag">场景：{plan.scene_tag}</span>}
+          {PLAN_FIELDS.map(([k, label]) => (
+            <label className="refine-field" key={k}>
+              <span>{label}</span>
+              <textarea
+                rows={1}
+                value={plan[k] || ""}
+                onChange={(e) => setField(k, e.target.value)}
+              />
+            </label>
+          ))}
+          <label className="refine-field">
+            <span>必须出现（每行一条，会逐条核对）</span>
+            <textarea
+              rows={3}
+              value={(plan.must_include || []).join("\n")}
+              onChange={(e) => setList("must_include", e.target.value)}
+            />
+          </label>
+          <label className="refine-field">
+            <span>不能发生（每行一条，会逐条核对）</span>
+            <textarea
+              rows={2}
+              value={(plan.must_not || []).join("\n")}
+              onChange={(e) => setList("must_not", e.target.value)}
+            />
+          </label>
+          <div className="ingest-actions">
+            <button className="btn ghost" onClick={() => setPlan(null)} disabled={busy}>
+              ← 重选候选
+            </button>
+            <button className="btn primary" onClick={write} disabled={busy}>
+              {busy ? "校验写循环运行中…" : "→ 生成成稿"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ③ 进度 */}
+      {busy && stage && (
+        <div className="imitate-progress">
+          <div className="stage-line">
+            <span className="stage-dot" />
+            {stage}
+          </div>
+          {liveAttempts.map((a) => (
+            <div className="attempt" key={a.attempt}>
+              <span className={a.satisfied ? "ok" : "warn"}>
+                第{a.attempt}稿 {a.satisfied ? "✓达标" : "未达标"}
+              </span>
+              <span>
+                约束 {a.checks.filter((k) => k.satisfied).length}/{a.checks.length}
+              </span>
+              <span>复述 {(a.ngram_overlap * 100).toFixed(1)}%</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ③ 成稿 + 逐条核对 */}
+      {result && (
+        <>
+          <div className="imitate-report">
+            {result.attempts.map((a) => (
+              <div className="attempt-block" key={a.attempt}>
+                <div className="attempt">
+                  <span className={a.satisfied ? "ok" : "warn"}>
+                    第{a.attempt}稿 {a.satisfied ? "✓达标" : "未达标"}
+                  </span>
+                  <span>复述 {(a.ngram_overlap * 100).toFixed(1)}%</span>
+                </div>
+                {a.checks.length > 0 && (
+                  <ul className="refine-checks">
+                    {a.checks.map((k, j) => (
+                      <li key={j} className={k.satisfied ? "ok" : "warn"}>
+                        {k.satisfied ? "✓" : "✗"} {k.kind === "include" ? "必须" : "不能"}：
+                        {k.text}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="imitate-draft">{result.text}</div>
+          <div className="ingest-actions">
+            <button className="btn primary" onClick={accept}>
+              并入正文
+            </button>
+            <button className="btn ghost" onClick={() => setResult(null)}>
+              回到计划
+            </button>
+          </div>
+        </>
+      )}
+
+      {!candidates && !plan && !result && !busy && (
+        <p className="empty">
+          精修是最重的模式：
+          <br />
+          给一段正文，拿到几条差异化走向，挑一条排成带约束的场景计划，
+          再让它按计划写、逐条核对约束。
+        </p>
       )}
     </div>
   );
