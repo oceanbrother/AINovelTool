@@ -35,6 +35,34 @@ rules from retrieval hits — every detail has a source.*
 | Imitation self-check loop | judge feedback lifts style **2→6** in one rewrite; plagiarism gate at 0.0 overlap |
 | Judge calibration | real-vs-imitation blind discrimination **5/6** — the judge's verdicts carry weight |
 | Precision-mode constraint fulfilment (A/B) | **plain-continue 58.9% → precision 93.0%** (+34 pts; per-constraint must-include/must-not check, n=3) |
+| Label-quality gate | **0.396 → 0.789** against a hand-labelled gold set (kappa 0.666); nothing gets built on labels below 0.6 |
+| Rhythm prior (A/B, **null result**) | injecting a measured rhythm made output *worse*: distance 1.219 vs 0.619, style 3.25 vs 4.65 → **not shipped** |
+
+## Things that were tried and did not work
+
+Mechanisms that look obviously useful often measure as noise. This project A/Bs
+its own ideas and **records the null results, then stops building**:
+
+| Mechanism | The intuition | Measured | Outcome |
+| --- | --- | --- | --- |
+| Scene-aligned sample recall | same-scene examples read closer | style 5.5 vs 4.7 — inside the noise (n=10) | harness kept, claim dropped |
+| Rhythm prior in the prompt | feed the measured rhythm back in | distance **1.219 vs 0.619**, style **3.25 vs 4.65** — both worse | **not wired into generation** |
+| Five scene labels | finer categories, better labels | 0.396 accuracy against a human gold set | taxonomy rebuilt; four labels reach 0.789 |
+
+One principle runs through all of it:
+
+> **Concrete, checkable constraints belong in the instruction. Statistics belong in the verification.**
+
+A scene plan's `must_include` / `must_not` are the first kind, and they lifted
+fulfilment from 59% to 93%. Chapter-scale statistics ("60% dialogue, sentences
+shorten 19%") are the second, and pushing them into a 300-character writing task
+made the result worse than no guidance at all.
+
+Labelling has a hard gate too: **below 0.6 accuracy against a human gold set,
+nothing may be built on top**. The first label set was stopped there — and note
+that the two machine labellers agreed with *each other* (0.675) more than either
+agreed with the human, so **a broken taxonomy looks exactly like healthy
+agreement until a person is asked**.
 
 ## Architecture
 
@@ -90,6 +118,48 @@ explicit plan**" — a genuine agentic loop: `plan → generate → verify → d
 rewrite`. Verification is an objective present/absent checklist, not another
 high-variance 1–10 score. Measured (same chapter, same direction): constraint
 fulfilment **plain-continue 58.9% → precision 93.0%**.
+
+### Knowledge state: who is allowed to know what
+
+Suspense is a bookkeeping problem before it is an art problem — a scene breaks
+when someone says a thing they have no way of knowing, or when the reader is
+handed an answer early. `foreshadowing.status` only records whether a thread is
+closed, which cannot express **dramatic irony**: the reader knowing what the
+protagonist does not.
+
+So awareness is modelled explicitly: one fact, plus each party's level
+(unknown / suspects / knows / believes_false), with **the reader tracked
+separately from every character**. When a scene plan is drafted, **program
+rules** compile that into must-not constraints:
+
+- reader hasn't reached it → nothing may confirm it
+- character below "knows" → they cannot say it (suspecting is not knowing)
+- character holding a false belief → they cannot act as if they saw through it
+
+Derivation never calls a model: the rules state exactly, so a model would add
+labelling error while removing the guarantee that the constraint appears at all.
+Derived lines are stored apart from the author's own, shown with their
+provenance, and safe from an accidental edit. Because they speak `must_not` —
+a language the pipeline **already verifies** — verification needed no changes.
+
+### Learning voice from edits, not from a reference book
+
+The tool learns a reference author's voice; the better it gets, the less it
+sounds like its user. So it captures a signal that was already being produced
+and discarded: **every rewrite the author makes before merging a draft**. The
+draft box became editable *before* the merge — the one moment "what the model
+gave" and "what the author wanted" are still separable, since once text lands in
+a chapter the two can never be pulled apart again.
+
+Each `(suggested, accepted)` pair is stored with its texture deltas, where the
+**sign** is the preference. Internalisation now stores the **accepted** text:
+prose the author reworked is theirs, whatever a judge thought of the draft.
+
+The analyser tries to disprove itself — fit the preference direction on a
+training split, then check whether held-out edits move the same way. ~50% means
+the edits have nothing to do with texture and no scorer should be built. Verified
+on synthetic input: consistent 1.00, contradicted 0.00, pure noise 0.51. Below
+20 substantive pairs it refuses to conclude anything.
 
 ## v1.1 multi-source retrieval
 
@@ -156,6 +226,10 @@ Every number above is reproducible — see [backend/eval/README.md](backend/eval
 | Style imitation blind eval | `eval/run_style_eval.py` |
 | Judge calibration (real vs imitation) | `eval/run_judge_calibration.py` |
 | Precision constraint fulfilment A/B (59%→93%) | `eval/run_refine_ablation.py` |
+| Label-agreement gate (accuracy + Cohen's kappa vs human gold) | `eval/run_mode_agreement.py` |
+| Rhythm profile (transition matrix / density curves / chapter endings) | `eval/run_rhythm_profile.py` |
+| Rhythm prior A/B (**null result**, not shipped) | `eval/run_rhythm_ablation.py` |
+| Author-edit preference, with a direction-agreement self-test | `eval/run_override_profile.py` |
 
 > Environment: Windows 11 / CPU inference (bge-m3) / DeepSeek V4 (generate deepseek-v4-flash · judge deepseek-v4-pro) / pgvector HNSW.
 
@@ -163,7 +237,9 @@ Every number above is reproducible — see [backend/eval/README.md](backend/eval
 
 `projects` · `characters` · `relationships` · `world_settings` · `chapters` ·
 `foreshadowing` · `setting_chunks` (vector) · `rolling_summary` ·
-`literary_works` · `literary_knowledge` (vector) · `idioms` (vector)
+`literary_works` · `literary_knowledge` (vector) · `idioms` (vector) ·
+`story_facts` (awareness) · `style_overrides` (author edits) ·
+`corpus_segments` / `corpus_paragraphs` (rhythm analysis, local-only)
 
 Schema: [backend/scripts/init_pgvector.sql](backend/scripts/init_pgvector.sql).
 
@@ -181,6 +257,14 @@ Schema: [backend/scripts/init_pgvector.sql](backend/scripts/init_pgvector.sql).
 - [x] Precision mode (generation-side lift): candidates → ScenePlan (checkable
       constraints) → constraint-verified write + rewrite loop; fulfilment **59%→93%**
       (`run_refine_ablation.py`, agentic loop: plan→generate→verify→rewrite)
+- [x] Rhythm modelling: TextTiling segmentation + transition matrix / density curves /
+      chapter-ending profile, behind a label-quality gate (0.396→0.789). **Null result** —
+      rhythm is measurable but does not transfer through a prompt, so it was not shipped
+- [x] Knowledge state: reader and character awareness modelled apart, compiled by program
+      rules into must-not constraints that the existing verification loop already covers
+- [x] Author-edit capture: drafts editable before merging, `(suggested, accepted)` pairs
+      stored, internalisation switched to the author's version; preference analyser
+      includes a direction-agreement self-test that can report "no signal"
 
 ---
 
