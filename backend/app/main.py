@@ -15,6 +15,7 @@ from app.api import (
     generate,
     idioms,
     literary,
+    overrides,
     projects,
     retrieval,
     style,
@@ -39,6 +40,7 @@ app.include_router(chapters.router)
 app.include_router(foreshadowing.router)
 app.include_router(retrieval.router)
 app.include_router(style.router)
+app.include_router(overrides.router)
 app.include_router(generate.router)
 # v1.1 multi-source retrieval features
 app.include_router(literary.router)

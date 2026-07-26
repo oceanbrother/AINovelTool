@@ -146,6 +146,37 @@ CREATE INDEX IF NOT EXISTS idx_lit_knowledge_embed
     ON literary_knowledge USING hnsw (embedding vector_cosine_ops);
 
 -- ---------------------------------------------------------------------------
+-- Author overrides — (what the tool suggested, what the author kept)
+-- ---------------------------------------------------------------------------
+-- Every rewrite before a merge is behavioural evidence about the author's own
+-- voice, which beats asking them to describe it. The pair only exists because
+-- the draft box is editable BEFORE merging; once text lands in the chapter the
+-- edits blend in and the pairing is unrecoverable.
+-- Texture deltas are stored on write (services/rhythm.texture, pure + zero LLM).
+-- These numbers must never be injected into a generation prompt — that was
+-- tested and measurably hurt output; they are for post-hoc selection and for
+-- surfacing the author's own accepted prose as examples.
+
+CREATE TABLE IF NOT EXISTS style_overrides (
+    id                 BIGSERIAL PRIMARY KEY,
+    project_id         BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    chapter_id         BIGINT,
+    source             TEXT NOT NULL,        -- continue / imitate / refine
+    suggested_text     TEXT NOT NULL,
+    accepted_text      TEXT NOT NULL,
+    edit_ratio         REAL NOT NULL DEFAULT 0,  -- 0 = verbatim, 1 = rewritten
+    -- accepted − suggested; the sign is the preference
+    d_dialogue_ratio   REAL,
+    d_short_sent_ratio REAL,
+    d_avg_sent_len     REAL,
+    d_punct_density    REAL,
+    d_avg_para_len     REAL,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_style_overrides_project
+    ON style_overrides(project_id, source);
+
+-- ---------------------------------------------------------------------------
 -- Rhythm analysis — ordered reference corpus (local-only private data)
 -- ---------------------------------------------------------------------------
 -- Decoupled from setting_chunks on purpose: that table serves retrieval and is

@@ -977,6 +977,9 @@ function ImitatePane({ projectId, chapter, onAppend, directive, directiveNonce }
   const [stage, setStage] = useState(null); // current SSE phase during a run
   const [liveAttempts, setLiveAttempts] = useState([]); // scorecards as they land
   const [hero, setHero] = useState("主角"); // sample name for the placeholder
+  // the author's working copy; result.text stays as the model's original so the
+  // pair can be recorded on accept
+  const [draft, setDraft] = useState("");
 
   useEffect(() => {
     api
@@ -994,20 +997,28 @@ function ImitatePane({ projectId, chapter, onAppend, directive, directiveNonce }
   const accept = async () => {
     if (!result) return;
     const passed = result.attempts.some((a) => a.passed);
-    await onAppend?.(result.text);
-    if (passed) {
-      // 过检稿内化为文风样本：正式续写将优先以它为语感参照，
-      // 逐步取代对源素材（epub 样本）的直接依赖
-      try {
-        await api.addStyleSample(projectId, result.text, "内化");
-        setNote("已并入正文，并内化为文风样本（续写将优先参照你的过检稿）。");
-      } catch (err) {
-        setNote(`已并入正文；内化失败：${err.message}`);
-      }
-    } else {
-      setNote("已并入正文。此稿未过检，不作内化。");
+    await onAppend?.(draft);
+    // 记录 (模型原稿, 你并入的版本)。内化规则在后端，避免前后端两套判断走岔。
+    // 内化的是**你的版本**——你动过手的字才算你的语感。
+    try {
+      const rec = await api.recordOverride(projectId, {
+        source: "imitate",
+        suggested_text: result.text,
+        accepted_text: draft,
+        chapter_id: chapter?.id ?? null,
+        passed_check: passed,
+      });
+      const edited = rec.edit_ratio > 0.001;
+      setNote(
+        rec.internalized
+          ? `已并入正文，并内化为文风样本${edited ? "（存的是你改后的版本）" : ""}。`
+          : "已并入正文。此稿未过检且你未修改，不作内化。"
+      );
+    } catch (err) {
+      setNote(`已并入正文；记录失败：${err.message}`);
     }
     setResult(null);
+    setDraft("");
   };
 
   const run = async (revision = false) => {
@@ -1036,6 +1047,7 @@ function ImitatePane({ projectId, chapter, onAppend, directive, directiveNonce }
         onAttempt: (a) => setLiveAttempts((prev) => [...prev, a]),
       });
       setResult(final);
+      setDraft(final?.text || ""); // working copy the author can revise in place
       setFeedback("");
     } catch (err) {
       setError(err.message);
@@ -1102,7 +1114,14 @@ function ImitatePane({ projectId, chapter, onAppend, directive, directiveNonce }
               <p className="pane-hint">裁判批语：{result.attempts.at(-1).notes}</p>
             )}
           </div>
-          <div className="imitate-draft">{result.text}</div>
+          {/* editable before merging — the only moment the model's version and
+              yours are still separable */}
+          <textarea
+            className="imitate-draft editable"
+            value={draft}
+            aria-label="生成的稿件，可直接修改后再并入"
+            onChange={(e) => setDraft(e.target.value)}
+          />
           <div className="ingest-actions">
             <button className="btn primary" onClick={accept}>
               并入正文
@@ -1153,6 +1172,9 @@ function RefinePane({ projectId, chapter, onAppend }) {
   const [picked, setPicked] = useState({}); // index -> bool (merge set)
   const [plan, setPlan] = useState(null); // ② editable ScenePlan
   const [result, setResult] = useState(null); // ③ final draft + report
+  // author's working copy; result.text stays as the model's original so the
+  // (suggested, kept) pair can be recorded on accept
+  const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState(null);
   const [liveAttempts, setLiveAttempts] = useState([]);
@@ -1253,6 +1275,7 @@ function RefinePane({ projectId, chapter, onAppend }) {
         }
       );
       setResult(final);
+      setDraft(final?.text || ""); // working copy the author can revise in place
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1263,10 +1286,29 @@ function RefinePane({ projectId, chapter, onAppend }) {
 
   const accept = async () => {
     if (!result) return;
-    await onAppend?.(result.text);
-    // 精修稿以"约束达标"过检，非"语感范本"，故不自动内化为文风样本
-    setNote("已并入正文。");
+    const satisfied = result.attempts?.at(-1)?.satisfied ?? false;
+    await onAppend?.(draft);
+    // 记录 (模型原稿, 你并入的版本)。以前精修稿一律不内化——理由是它按"约束达标"
+    // 过检、不算语感范本；但你亲手改过的字就是你的语感，所以改用同一条规则：
+    // 动过手 → 内化你的版本。判定在后端，前后端不会走岔。
+    try {
+      const rec = await api.recordOverride(projectId, {
+        source: "refine",
+        suggested_text: result.text,
+        accepted_text: draft,
+        chapter_id: chapter?.id ?? null,
+        passed_check: satisfied,
+      });
+      setNote(
+        rec.internalized
+          ? `已并入正文，并把${rec.edit_ratio > 0.001 ? "你改后的" : "该"}版本内化为文风样本。`
+          : "已并入正文。"
+      );
+    } catch (err) {
+      setNote(`已并入正文；记录失败：${err.message}`);
+    }
     setResult(null);
+    setDraft("");
     setPlan(null);
     setCandidates(null);
   };
@@ -1432,7 +1474,14 @@ function RefinePane({ projectId, chapter, onAppend }) {
               </div>
             ))}
           </div>
-          <div className="imitate-draft">{result.text}</div>
+          {/* editable before merging — the only moment the model's version and
+              yours are still separable */}
+          <textarea
+            className="imitate-draft editable"
+            value={draft}
+            aria-label="生成的稿件，可直接修改后再并入"
+            onChange={(e) => setDraft(e.target.value)}
+          />
           <div className="ingest-actions">
             <button className="btn primary" onClick={accept}>
               并入正文

@@ -44,6 +44,12 @@ export const api = {
   expandSample: (pid, sid, idea) =>
     json("POST", `/projects/${pid}/style-samples/${sid}/expand`, { idea }),
 
+  // 记录 (建议稿, 接受稿) 配对。只在「并入正文」那一刻可靠——文字进了章节，
+  // 作者的修改就与整章混在一起，再也分不出哪部分是模型给的。
+  // 内化规则在后端（单一事实来源），这里不判断。
+  recordOverride: (pid, payload) =>
+    json("POST", `/projects/${pid}/style-overrides`, payload),
+
 
   listForeshadowing: (pid) => json("GET", `/projects/${pid}/foreshadowing`),
   createForeshadowing: (pid, payload) =>

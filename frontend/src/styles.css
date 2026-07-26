@@ -226,6 +226,24 @@ input, textarea, select {
   color: var(--ink);
   white-space: pre-wrap;
 }
+/* Once the stream lands the box becomes editable, so the author can revise
+   before merging — that is the only point where "what was suggested" and
+   "what was kept" are still two separate things. Inherits the paper look so it
+   reads as continuous writing surface rather than a form control. */
+.paper .streaming .stream-edit {
+  display: block;
+  width: 100%;
+  min-height: 12em;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  resize: vertical;
+}
+.paper .streaming .stream-edit:focus { outline: none; }
 .paper .streaming .clue-strip {
   display: flex;
   flex-wrap: wrap;
@@ -721,6 +739,20 @@ input, textarea, select {
   white-space: pre-wrap;
   max-height: 40vh;
   overflow-y: auto;
+}
+/* Editable before merging: the author revises here, so the tool can tell what
+   it suggested from what was actually kept. Deliberately styled like paper —
+   this is writing surface, not a form field. */
+.muse textarea.imitate-draft {
+  display: block;
+  width: 100%;
+  min-height: 22vh;
+  border: 1px solid transparent;
+  resize: vertical;
+}
+.muse textarea.imitate-draft:focus {
+  outline: none;
+  border-color: var(--cinnabar);
 }
 
 /* 创作 · 精修 (refine) */

@@ -237,6 +237,10 @@ function Editor({ projectId, chapter, onLocalChange, directive, directiveNonce }
   const [saveState, setSaveState] = useState("已保存");
   const [instruction, setInstruction] = useState("");
   const [streamText, setStreamText] = useState(null); // null = not streaming
+  // the model's version, frozen when the stream ends. streamText stays editable
+  // from then on, so accepting can record what was suggested vs what was kept —
+  // a pairing that becomes unrecoverable once text merges into the chapter.
+  const [suggested, setSuggested] = useState(null);
   const [streamClues, setStreamClues] = useState(null); // retrieval evidence
   const [busy, setBusy] = useState(false);
   const abortRef = useRef(null);
@@ -277,6 +281,7 @@ function Editor({ projectId, chapter, onLocalChange, directive, directiveNonce }
   const startContinue = async () => {
     setBusy(true);
     setStreamText("");
+    setSuggested(null);
     setStreamClues(null);
     abortRef.current = new AbortController();
     let acc = "";
@@ -298,20 +303,34 @@ function Editor({ projectId, chapter, onLocalChange, directive, directiveNonce }
       }
     } finally {
       setBusy(false);
+      setSuggested(acc); // freeze the model's version; the box is editable now
     }
   };
 
   const acceptStream = () => {
     const merged = content ? `${content}\n${streamText}` : streamText;
     setContent(merged);
-    setStreamText(null);
-    setStreamClues(null);
     scheduleSave(title, merged);
+    if (suggested) {
+      // fire-and-forget: a failed recording must never cost the author their text
+      api
+        .recordOverride(projectId, {
+          source: "continue",
+          suggested_text: suggested,
+          accepted_text: streamText,
+          chapter_id: chapter.id,
+        })
+        .catch(() => {});
+    }
+    setStreamText(null);
+    setSuggested(null);
+    setStreamClues(null);
   };
 
   const discardStream = () => {
     abortRef.current?.abort();
     setStreamText(null);
+    setSuggested(null);
     setStreamClues(null);
   };
 
@@ -351,8 +370,21 @@ function Editor({ projectId, chapter, onLocalChange, directive, directiveNonce }
                 ))}
               </div>
             )}
-            {streamText}
-            {busy && <span className="cursor" />}
+            {busy ? (
+              <>
+                {streamText}
+                <span className="cursor" />
+              </>
+            ) : (
+              // editable once the stream lands: revise here, before merging,
+              // so the (suggested, kept) pair is still separable
+              <textarea
+                className="stream-edit"
+                value={streamText}
+                aria-label="生成的正文，可直接修改后再并入"
+                onChange={(e) => setStreamText(e.target.value)}
+              />
+            )}
           </div>
         )}
       </div>

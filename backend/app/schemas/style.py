@@ -34,6 +34,30 @@ class StyleSampleList(BaseModel):
     by_scene: dict[str, int]
 
 
+class StyleOverrideCreate(BaseModel):
+    """作者接受一段生成稿时提交的 (建议稿, 接受稿) 配对。
+
+    只在「并入正文」那一刻记录 —— 那是唯一还能干净配对的时机，
+    文字一旦落进章节，作者的修改就与整章混在一起、无法还原。
+    """
+
+    source: str = Field(pattern="^(continue|imitate|refine)$")
+    suggested_text: str = Field(min_length=1, description="模型给出的原稿")
+    accepted_text: str = Field(min_length=1, description="作者实际并入的版本")
+    chapter_id: int | None = None
+    # 该稿是否通过了自检门（仿写/精修有，续写没有 → None）。
+    # 只在作者一字未改时才用得上：改过的稿子无条件内化。
+    passed_check: bool | None = None
+
+
+class StyleOverrideOut(BaseModel):
+    id: int
+    source: str
+    edit_ratio: float          # 0 = 一字未改，1 = 完全重写
+    internalized: bool         # 是否已把作者的版本存为文风样本
+    created_at: datetime
+
+
 class StyleExpandRequest(BaseModel):
     """从一段选中的样本出发，借其手法扩写贴合当前构思的新文字。"""
 
