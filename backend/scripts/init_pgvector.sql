@@ -146,6 +146,32 @@ CREATE INDEX IF NOT EXISTS idx_lit_knowledge_embed
     ON literary_knowledge USING hnsw (embedding vector_cosine_ops);
 
 -- ---------------------------------------------------------------------------
+-- Story facts — who currently knows what
+-- ---------------------------------------------------------------------------
+-- The reader's awareness is deliberately separate from every character's: that
+-- gap is suspense. A reader who knows what the protagonist does not is dramatic
+-- irony, and a single "revealed yet?" flag (what foreshadowing.status is) cannot
+-- express it. Character awareness sits in JSONB keyed by character id — the row
+-- count is small, the shape matches characters.persona, and a fact's whole state
+-- stays readable in one row. Only characters the author registers appear there;
+-- absence means "not modelled", not "ignorant".
+
+CREATE TABLE IF NOT EXISTS story_facts (
+    id               BIGSERIAL PRIMARY KEY,
+    project_id       BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    statement        TEXT NOT NULL,             -- stated plainly; quoted verbatim
+                                                -- into the constraints derived from it
+    is_true          BOOLEAN NOT NULL DEFAULT TRUE,  -- false = a lie or red herring
+    reader_level     TEXT NOT NULL DEFAULT 'unknown',
+    -- {"<character_id>": "unknown|suspects|knows|believes_false"}
+    character_levels JSONB NOT NULL DEFAULT '{}'::jsonb,
+    foreshadowing_id BIGINT REFERENCES foreshadowing(id) ON DELETE SET NULL,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_story_facts_project ON story_facts(project_id);
+
+-- ---------------------------------------------------------------------------
 -- Author overrides — (what the tool suggested, what the author kept)
 -- ---------------------------------------------------------------------------
 -- Every rewrite before a merge is behavioural evidence about the author's own

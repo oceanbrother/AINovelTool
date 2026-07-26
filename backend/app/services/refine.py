@@ -26,6 +26,8 @@ from app.core import llm
 from app.core.config import settings
 from app.core.embedding import embed_texts
 from app.models.chapter import Chapter
+from app.models.character import Character
+from app.models.story_fact import StoryFact
 from app.schemas.refine import (
     ConstraintCheck,
     PlanCandidate,
@@ -35,7 +37,7 @@ from app.schemas.refine import (
     ScenePlan,
     VerifyResult,
 )
-from app.services import generation, imitation, retrieval, scene
+from app.services import generation, imitation, knowledge, retrieval, scene
 
 # Cosine (bge-m3 vectors are L2-normalised, so a dot product IS the cosine)
 # above which a candidate one-liner is flagged as "疑似重复既有桥段". Advisory
@@ -254,7 +256,31 @@ async def expand_plan(
     if tag_seed.strip():
         plan.scene_tag = await scene.classify_text(tag_seed)
 
+    # Continuity rules compiled from the knowledge table, appended by PROGRAM
+    # rather than asked of the planner: a character who cannot know something
+    # must not say it, and that guarantee should not depend on whether the model
+    # remembered to write the line. Kept in their own field so the UI can show
+    # where they came from and editing the plan cannot drop them.
+    plan.derived_must_not = await derive_constraints(
+        db, project_id, existing=plan.must_not
+    )
+
     return RefinePlanResponse(plan=plan, raw_settings=chunks)
+
+
+async def derive_constraints(
+    db: AsyncSession, project_id: int, existing: list[str] | None = None
+) -> list[str]:
+    """Load the project's knowledge state and compile it into must_not lines."""
+    facts = list((await db.execute(
+        select(StoryFact).where(StoryFact.project_id == project_id)
+    )).scalars().all())
+    if not facts:
+        return []
+    names = dict((await db.execute(
+        select(Character.id, Character.name).where(Character.project_id == project_id)
+    )).all())
+    return knowledge.derive_must_not(facts, names, existing or [])
 
 
 # --- ③ 校验写作 + 重写 ---------------------------------------------------------
@@ -281,11 +307,18 @@ async def verify_draft(draft: str, plan: ScenePlan) -> VerifyResult:
     reliable than a 1-10 style score — which is exactly why the gate can be a
     program check instead of another noisy judge.
     """
-    if not plan.must_include and not plan.must_not:
+    # the author's prohibitions and the ones compiled from knowledge state are
+    # checked together — the judge has no reason to treat them differently, and
+    # provenance is preserved on each check for the UI rather than in the prompt
+    exclusions = list(plan.must_not) + [
+        t for t in plan.derived_must_not if t not in plan.must_not
+    ]
+    derived_from = len(plan.must_not)
+    if not plan.must_include and not exclusions:
         return VerifyResult(satisfied=True, checks=[])
 
     inc = "\n".join(f"{i}. {t}" for i, t in enumerate(plan.must_include)) or "（无）"
-    exc = "\n".join(f"{i}. {t}" for i, t in enumerate(plan.must_not)) or "（无）"
+    exc = "\n".join(f"{i}. {t}" for i, t in enumerate(exclusions)) or "（无）"
     raw = await llm.complete(
         [
             {"role": "system", "content": _VERIFY_SYSTEM},
@@ -313,13 +346,14 @@ async def verify_draft(draft: str, plan: ScenePlan) -> VerifyResult:
                 evidence=str(r.get("evidence", "")),
             )
         )
-    for i, t in enumerate(plan.must_not):
+    for i, t in enumerate(exclusions):
         r = exc_res[i] if i < len(exc_res) and isinstance(exc_res[i], dict) else {}
         checks.append(
             ConstraintCheck(
                 text=t, kind="exclude",
                 satisfied=bool(r.get("ok", False)),
                 evidence=str(r.get("evidence", "")),
+                derived=i >= derived_from,
             )
         )
     satisfied = all(c.satisfied for c in checks) if checks else True
@@ -359,8 +393,14 @@ def _plan_block(plan: ScenePlan) -> str:
             lines.append(f"· {label}：{val}")
     if plan.must_include:
         lines.append("· 必须出现（务必在正文里落实）：" + "；".join(plan.must_include))
-    if plan.must_not:
-        lines.append("· 不能发生（务必回避）：" + "；".join(plan.must_not))
+    # the author's prohibitions and the continuity rules compiled from knowledge
+    # state read the same way to the model, so they go in one list; only the UI
+    # needs to know which is which
+    prohibitions = list(plan.must_not) + [
+        t for t in plan.derived_must_not if t not in plan.must_not
+    ]
+    if prohibitions:
+        lines.append("· 不能发生（务必回避）：" + "；".join(prohibitions))
     return "\n".join(lines)
 
 

@@ -51,6 +51,14 @@ export const api = {
     json("POST", `/projects/${pid}/style-overrides`, payload),
 
 
+  // 故事事实 + 谁知道它。读者认知与人物认知分开——那个落差就是悬念。
+  // 派生的 must_not 由后端在生成场景计划时自动追加。
+  listFacts: (pid) => json("GET", `/projects/${pid}/story-facts`),
+  createFact: (pid, payload) => json("POST", `/projects/${pid}/story-facts`, payload),
+  updateFact: (pid, fid, payload) =>
+    json("PATCH", `/projects/${pid}/story-facts/${fid}`, payload),
+  deleteFact: (pid, fid) => json("DELETE", `/projects/${pid}/story-facts/${fid}`),
+
   listForeshadowing: (pid) => json("GET", `/projects/${pid}/foreshadowing`),
   createForeshadowing: (pid, payload) =>
     json("POST", `/projects/${pid}/foreshadowing`, payload),

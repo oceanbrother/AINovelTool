@@ -61,6 +61,9 @@ class ScenePlan(BaseModel):
     emotion_curve: str = ""            # 情绪曲线
     must_include: list[str] = []       # 必须出现（客观可校验）
     must_not: list[str] = []           # 不能发生（客观可校验）
+    # 由知识状态程序推导的禁令（services/knowledge.py），与上面作者/LLM 写的分开存：
+    # 前端能标明出处，作者编辑计划时也不会把连续性规则误删。校验时两者合并核对。
+    derived_must_not: list[str] = []
     end_state: str = ""                # 结尾状态（为下一场留口子）
     scene_tag: str = ""                # 场景标签（scene.classify_text，零 LLM）
     grounded: list[str] = []           # 接地设定原文
@@ -84,6 +87,7 @@ class ConstraintCheck(BaseModel):
     kind: str                          # "include" | "exclude"
     satisfied: bool                    # include: 是否出现；exclude: 是否成功规避
     evidence: str = ""                 # 判定依据（片段/说明）
+    derived: bool = False              # 来自知识状态的自动推导，而非作者/LLM 所写
 
 
 class VerifyResult(BaseModel):

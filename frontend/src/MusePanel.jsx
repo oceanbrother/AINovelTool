@@ -13,6 +13,7 @@ const SECTIONS = [
       { key: "ingest", label: "素材" },
       { key: "settings", label: "设定" },
       { key: "threads", label: "伏笔" },
+      { key: "knowledge", label: "知识" },
     ],
   },
   {
@@ -90,6 +91,7 @@ export default function MusePanel({
       {tabKey === "ingest" && <IngestPane projectId={projectId} />}
       {tabKey === "settings" && <SettingsPane projectId={projectId} />}
       {tabKey === "threads" && <ThreadsPane projectId={projectId} chapter={chapter} />}
+      {tabKey === "knowledge" && <KnowledgePane projectId={projectId} />}
       {tabKey === "quotes" && <QuotesPane />}
       {tabKey === "idioms" && <IdiomsPane />}
       {tabKey === "branches" && <BranchesPane projectId={projectId} chapter={chapter} />}
@@ -806,6 +808,148 @@ function ThreadsPane({ projectId, chapter }) {
   );
 }
 
+/* ---------- 架构 · 知识 ---------- */
+// Who knows what, with the reader tracked separately from every character —
+// that gap is the suspense. The tool compiles these into 不能发生 constraints
+// when it drafts a scene plan, so a character can't say a thing they have no
+// way of knowing and the reader can't be handed an answer too early.
+
+const LEVELS = [
+  ["unknown", "不知道"],
+  ["suspects", "怀疑"],
+  ["knows", "知道"],
+  ["believes_false", "误信"],
+];
+
+function KnowledgePane({ projectId }) {
+  const [facts, setFacts] = useState(null);
+  const [characters, setCharacters] = useState([]);
+  const [statement, setStatement] = useState("");
+  const [error, setError] = useState(null);
+
+  const reload = async () => {
+    try {
+      const [f, c] = await Promise.all([
+        api.listFacts(projectId),
+        api.listCharacters(projectId),
+      ]);
+      setFacts(f);
+      setCharacters(c);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+  useEffect(() => {
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  const add = async (e) => {
+    e.preventDefault();
+    if (!statement.trim()) return;
+    setError(null);
+    try {
+      await api.createFact(projectId, { statement: statement.trim() });
+      setStatement("");
+      await reload();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const patch = async (fact, body) => {
+    try {
+      await api.updateFact(projectId, fact.id, body);
+      await reload();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  // absent from the map = not modelled, which stays silent rather than
+  // generating a constraint for every character in the book
+  const setCharLevel = (fact, charId, level) => {
+    const next = { ...fact.character_levels };
+    if (level) next[charId] = level;
+    else delete next[charId];
+    patch(fact, { character_levels: next });
+  };
+
+  return (
+    <div className="pane">
+      <p className="pane-hint">
+        登记<strong>谁现在知道什么</strong>。读者与人物分开记——
+        写场景计划时会自动生成「不能发生」的约束：没登记的角色不产生约束。
+      </p>
+      <form className="thread-form" onSubmit={add}>
+        <input
+          value={statement}
+          placeholder="一句话陈述，如：晴湾是被装着的"
+          onChange={(e) => setStatement(e.target.value)}
+        />
+        <button className="btn primary" type="submit">
+          登记事实
+        </button>
+      </form>
+      {error && <p className="error">{error}</p>}
+      {facts && facts.length === 0 && (
+        <p className="empty">
+          还没有登记事实。
+          <br />
+          登记几条之后，生成场景计划时会自动带上连续性约束。
+        </p>
+      )}
+      {facts?.map((f) => (
+        <div className="slip fact" key={f.id} style={{ "--slip-heat": 0.6 }}>
+          <div className="slip-head">
+            <span className="slip-tag">{f.is_true ? "属实" : "不实"}</span>
+            <span className="thread-actions">
+              <button onClick={() => patch(f, { is_true: !f.is_true })}>
+                {f.is_true ? "标为不实" : "标为属实"}
+              </button>
+              <button onClick={() => api.deleteFact(projectId, f.id).then(reload)}>
+                删除
+              </button>
+            </span>
+          </div>
+          <p className="slip-body">
+            <strong>{f.statement}</strong>
+          </p>
+          <label className="fact-row">
+            <span>读者</span>
+            <select
+              value={f.reader_level}
+              onChange={(e) => patch(f, { reader_level: e.target.value })}
+            >
+              {LEVELS.map(([v, label]) => (
+                <option key={v} value={v}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {characters.map((c) => (
+            <label className="fact-row" key={c.id}>
+              <span>{c.name}</span>
+              <select
+                value={f.character_levels?.[String(c.id)] || ""}
+                onChange={(e) => setCharLevel(f, c.id, e.target.value)}
+              >
+                <option value="">未登记</option>
+                {LEVELS.map(([v, label]) => (
+                  <option key={v} value={v}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ---------- 行文 ---------- */
 
 function IdiomsPane() {
@@ -1417,6 +1561,18 @@ function RefinePane({ projectId, chapter, onAppend }) {
               onChange={(e) => setList("must_not", e.target.value)}
             />
           </label>
+          {/* read-only: compiled from the knowledge table, not written by the
+              planner — shown separately so editing the plan can't drop them */}
+          {plan.derived_must_not?.length > 0 && (
+            <div className="refine-field">
+              <span>由知识状态自动推导（同样会逐条核对）</span>
+              <ul className="derived-list">
+                {plan.derived_must_not.map((t, i) => (
+                  <li key={i}>{t}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="ingest-actions">
             <button className="btn ghost" onClick={() => setPlan(null)} disabled={busy}>
               ← 重选候选
@@ -1467,6 +1623,7 @@ function RefinePane({ projectId, chapter, onAppend }) {
                       <li key={j} className={k.satisfied ? "ok" : "warn"}>
                         {k.satisfied ? "✓" : "✗"} {k.kind === "include" ? "必须" : "不能"}：
                         {k.text}
+                        {k.derived && <span className="derived-mark">知识</span>}
                       </li>
                     ))}
                   </ul>

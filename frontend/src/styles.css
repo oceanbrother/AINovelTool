@@ -824,6 +824,52 @@ input, textarea, select {
   resize: vertical;
 }
 
+/* 架构 · 知识：per-fact awareness rows */
+.muse .slip.fact .fact-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 12px;
+}
+.muse .slip.fact .fact-row > span {
+  flex: none;
+  width: 4.5em;
+  color: var(--mist-dim);
+}
+.muse .slip.fact .fact-row select {
+  flex: 1;
+  background: var(--night);
+  border: 1px solid var(--night-3);
+  border-radius: 3px;
+  padding: 2px 6px;
+  color: var(--mist);
+  font-size: 12px;
+}
+.muse .slip.fact .fact-row select:focus { outline: none; border-color: var(--cinnabar); }
+
+/* constraints the knowledge table produced, not the planner — read-only */
+.muse .derived-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px 9px;
+  background: var(--cinnabar-soft);
+  border-left: 2px solid var(--cinnabar);
+  border-radius: 3px;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--mist);
+}
+.muse .derived-mark {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--cinnabar);
+  border: 1px solid var(--cinnabar);
+  border-radius: 2px;
+  padding: 0 3px;
+  margin-left: 5px;
+}
+
 .muse .attempt-block { margin-bottom: 8px; }
 .muse .refine-checks {
   list-style: none;
