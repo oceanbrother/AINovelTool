@@ -146,6 +146,61 @@ CREATE INDEX IF NOT EXISTS idx_lit_knowledge_embed
     ON literary_knowledge USING hnsw (embedding vector_cosine_ops);
 
 -- ---------------------------------------------------------------------------
+-- Rhythm analysis — ordered reference corpus (local-only private data)
+-- ---------------------------------------------------------------------------
+-- Decoupled from setting_chunks on purpose: that table serves retrieval and is
+-- evenly sampled + deduped, which destroys the adjacency rhythm analysis needs.
+-- Here segments are contiguous and ordered by (work, chapter_no, seq). No
+-- embedding column — sequence statistics don't need vectors.
+-- Corpus prose stays on this machine; only aggregate statistics ever leave it.
+
+CREATE TABLE IF NOT EXISTS corpus_segments (
+    id               BIGSERIAL PRIMARY KEY,
+    work             TEXT NOT NULL,
+    chapter_no       INTEGER NOT NULL,    -- spine order, 1-based
+    chapter_title    TEXT,
+    seq              INTEGER NOT NULL,    -- order within the chapter, 1-based
+    text             TEXT NOT NULL,
+    char_len         INTEGER NOT NULL,
+    -- texture layer: computed by services/rhythm.py, deterministic, zero LLM
+    dialogue_ratio   REAL,
+    short_sent_ratio REAL,
+    avg_sent_len     REAL,
+    punct_density    REAL,
+    avg_para_len     REAL,
+    -- tag layer: two independent labellers kept apart so they can be compared
+    scene_tag_anchor TEXT,                -- anchor-vector classifier
+    scene_tag_llm    TEXT,                -- judge model
+    func_tag         TEXT,                -- 转折 / 揭示 / 承接 / 铺垫
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_corpus_segments_order
+    ON corpus_segments(work, chapter_no, seq);
+
+-- Paragraphs — the unit rhythm is actually measured in. A ~450-char segment
+-- spans ~8 paragraphs and so contains every rendering mode at once (54% of them
+-- mixed dialogue with narration), which hides the very alternation rhythm is
+-- made of. Paragraphs (~64 chars) usually hold a single mode.
+-- Three label columns stay separate so labellers can be checked against each
+-- other: a quotation-mark rule, the local anchor classifier, and the judge model.
+CREATE TABLE IF NOT EXISTS corpus_paragraphs (
+    id          BIGSERIAL PRIMARY KEY,
+    work        TEXT NOT NULL,
+    chapter_no  INTEGER NOT NULL,
+    seq         INTEGER NOT NULL,     -- order within the chapter, 1-based
+    segment_id  BIGINT,               -- parent scene beat in corpus_segments
+    text        TEXT NOT NULL,
+    char_len    INTEGER NOT NULL,
+    is_dialogue BOOLEAN,              -- quotation-mark rule (free, near-certain)
+    mode_rule   TEXT,                 -- 对话 when the rule fires
+    mode_anchor TEXT,                 -- 对话/动作/描写/心理/叙述 via services/mode.py
+    mode_llm    TEXT,                 -- same vocabulary, judge model
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_corpus_paragraphs_order
+    ON corpus_paragraphs(work, chapter_no, seq);
+
+-- ---------------------------------------------------------------------------
 -- v1.1 — Idiom library (public asset; retrieval-grounded, anti-hallucination)
 -- ---------------------------------------------------------------------------
 
