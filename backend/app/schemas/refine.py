@@ -87,7 +87,9 @@ class ConstraintCheck(BaseModel):
     kind: str                          # "include" | "exclude"
     satisfied: bool                    # include: 是否出现；exclude: 是否成功规避
     evidence: str = ""                 # 判定依据（片段/说明）
-    derived: bool = False              # 来自知识状态的自动推导，而非作者/LLM 所写
+    # 约束来源：author=作者/LLM 写的 · knowledge=知识状态推导 · program=纯程序检测
+    # （套话、直接情绪句——这类不问模型，程序数得出来，也就没有裁判方差）
+    source: str = "author"
 
 
 class VerifyResult(BaseModel):

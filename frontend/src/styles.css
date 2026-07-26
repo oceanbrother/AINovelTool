@@ -860,6 +860,15 @@ input, textarea, select {
   line-height: 1.8;
   color: var(--mist);
 }
+/* program checks quote the offending text, so the fix is obvious without
+   re-reading the whole draft */
+.muse .check-evidence {
+  display: block;
+  margin: 2px 0 0 14px;
+  font-size: 11px;
+  color: var(--mist-dim);
+  font-style: italic;
+}
 .muse .derived-mark {
   font-size: 10px;
   letter-spacing: 1px;

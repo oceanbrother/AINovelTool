@@ -37,7 +37,19 @@ from app.schemas.refine import (
     ScenePlan,
     VerifyResult,
 )
-from app.services import generation, imitation, knowledge, retrieval, scene
+from app.services import (
+    cliche,
+    generation,
+    imitation,
+    knowledge,
+    retrieval,
+    rhythm,
+    scene,
+)
+
+# Naming a feeling once can be a deliberate beat; doing it repeatedly is the
+# scene explaining itself instead of happening.
+MAX_DIRECT_EMOTION = 1
 
 # Cosine (bge-m3 vectors are L2-normalised, so a dot product IS the cosine)
 # above which a candidate one-liner is flagged as "疑似重复既有桥段". Advisory
@@ -189,7 +201,17 @@ _PLAN_SYSTEM = (
     '"emotion_curve":"...","must_include":["...","..."],"must_not":["...","..."],'
     '"end_state":"..."}\n'
     "规则：must_include / must_not 必须是能客观判断在不在的具体项，不写抽象要求；"
-    "所有内容基于给定设定，不虚构新设定。"
+    "所有内容基于给定设定，不虚构新设定。\n"
+    # A model asked for a scene plan will happily stack "establish character +
+    # advance relationship + plant a clue + escalate conflict + hint at theme"
+    # into one scene. Every scene then strains, and a long book loses its
+    # breathing room — so the budget is stated explicitly.
+    "本场只承担一个主要目的，附带目的至多两个；"
+    "允许存在只用于陪伴、休息或展示生活的缓冲场景，不必每场都推进主线。\n"
+    # Crying is a result, not a function. Naming what changed irreversibly is
+    # what keeps 目标 from collapsing into a description of the surface events.
+    "写 goal 时先自问：这一场结束后，故事发生了什么不可逆的变化？"
+    "把那个变化写成目标，而不是把表面发生的事复述一遍。"
 )
 
 
@@ -353,11 +375,46 @@ async def verify_draft(draft: str, plan: ScenePlan) -> VerifyResult:
                 text=t, kind="exclude",
                 satisfied=bool(r.get("ok", False)),
                 evidence=str(r.get("evidence", "")),
-                derived=i >= derived_from,
+                source="knowledge" if i >= derived_from else "author",
             )
         )
+    checks.extend(program_checks(draft))
     satisfied = all(c.satisfied for c in checks) if checks else True
     return VerifyResult(satisfied=satisfied, checks=checks)
+
+
+def program_checks(draft: str) -> list[ConstraintCheck]:
+    """Checks that need counting, not judgement — so no model is consulted.
+
+    Stock phrases and named feelings are decidable by looking at the characters,
+    which makes these the only checks in the loop with no variance at all. They
+    also come back with the offending text quoted, so the rewrite instruction
+    can say which line to cut rather than asking vaguely for better prose.
+    """
+    checks: list[ConstraintCheck] = []
+
+    found = cliche.find_cliches(draft)
+    checks.append(
+        ConstraintCheck(
+            text="不使用套话",
+            kind="exclude",
+            satisfied=not found,
+            evidence="、".join(found[:4]) if found else "",
+            source="program",
+        )
+    )
+
+    named = rhythm.direct_emotion_sentences(draft)
+    checks.append(
+        ConstraintCheck(
+            text=f"直接点破情绪的句子不超过 {MAX_DIRECT_EMOTION} 句",
+            kind="exclude",
+            satisfied=len(named) <= MAX_DIRECT_EMOTION,
+            evidence="；".join(s[:20] for s in named[:3]) if named else "",
+            source="program",
+        )
+    )
+    return checks
 
 
 def _feedback_from_checks(checks: list[ConstraintCheck]) -> str:
@@ -399,8 +456,14 @@ def _plan_block(plan: ScenePlan) -> str:
     prohibitions = list(plan.must_not) + [
         t for t in plan.derived_must_not if t not in plan.must_not
     ]
-    if prohibitions:
-        lines.append("· 不能发生（务必回避）：" + "；".join(prohibitions))
+    # the stock-phrase ban is concrete enough to state up front — and it is
+    # also counted afterwards, so saying it here only saves a rewrite pass
+    prohibitions.append(cliche.prohibition_line())
+    prohibitions.append(
+        f"直接点破情绪（如「他感到孤独」）超过 {MAX_DIRECT_EMOTION} 句——"
+        "情绪要靠动作、物件与停顿泄露"
+    )
+    lines.append("· 不能发生（务必回避）：" + "；".join(prohibitions))
     return "\n".join(lines)
 
 

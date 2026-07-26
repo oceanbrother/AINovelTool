@@ -1623,7 +1623,15 @@ function RefinePane({ projectId, chapter, onAppend }) {
                       <li key={j} className={k.satisfied ? "ok" : "warn"}>
                         {k.satisfied ? "✓" : "✗"} {k.kind === "include" ? "必须" : "不能"}：
                         {k.text}
-                        {k.derived && <span className="derived-mark">知识</span>}
+                        {k.source === "knowledge" && (
+                          <span className="derived-mark">知识</span>
+                        )}
+                        {k.source === "program" && (
+                          <span className="derived-mark">程序</span>
+                        )}
+                        {k.evidence && k.source === "program" && !k.satisfied && (
+                          <span className="check-evidence">{k.evidence}</span>
+                        )}
                       </li>
                     ))}
                   </ul>

@@ -104,6 +104,32 @@ def avg_paragraph_len(text: str) -> float:
     return sum(len(p) for p in paras) / len(paras)
 
 
+# Naming a feeling outright is the shortest path to a flat page: "he felt
+# lonely" states the conclusion the scene was supposed to earn. Detection needs
+# both an emotion word AND a cue that the text is *reporting* it (a perception
+# verb, an intensifier, or 心里), which keeps "孤独的走廊" from counting.
+_EMOTIONS = (
+    "孤独|寂寞|难过|悲伤|伤心|痛苦|害怕|恐惧|恐慌|愤怒|生气|恼火|"
+    "开心|高兴|快乐|幸福|兴奋|绝望|失望|沮丧|焦虑|不安|紧张|尴尬|"
+    "羞愧|嫉妒|委屈|心疼|温暖|感动|愧疚|后悔|茫然|无助"
+)
+_DIRECT_EMOTION = re.compile(
+    rf"((感到|觉得|感觉|意识到|心里|心中|心底)[^。！？…]{{0,8}}({_EMOTIONS}))"
+    rf"|((很|非常|十分|无比|格外|异常)({_EMOTIONS}))"
+    rf"|(({_EMOTIONS})(极了|得很|不已))"
+)
+
+
+def direct_emotion_sentences(text: str) -> list[str]:
+    """Sentences that name a feeling instead of showing it.
+
+    Returned rather than counted so a rewrite instruction can quote the exact
+    offending sentence — "delete this line" is actionable in a way that
+    "too much direct emotion" is not.
+    """
+    return [s for s in split_sentences(text) if _DIRECT_EMOTION.search(s)]
+
+
 def is_dialogue_paragraph(text: str) -> bool:
     """Rule-based 对话 detection — free and near-certain, so no model is asked.
 
