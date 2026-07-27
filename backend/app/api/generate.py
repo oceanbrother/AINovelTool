@@ -157,13 +157,19 @@ async def refine_plan(
     payload: RefinePlanRequest,
     db: AsyncSession = Depends(get_session),
 ):
-    """② 把选中候选扩成可编辑的场景计划（+ 场景标签）。"""
+    """② 把选中候选扩成可编辑的场景计划（+ 场景标签），并落库。
+
+    带 previous_plan_id 时，上一版里被作者锁定的字段原样继承——重新生成不会
+    覆盖已经做过的判断。
+    """
     return await refine.expand_plan(
         db,
         project_id,
         payload.fragment,
         payload.candidate,
         payload.top_k_settings,
+        chapter_id=payload.chapter_id,
+        previous_plan_id=payload.previous_plan_id,
     )
 
 

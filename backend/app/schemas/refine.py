@@ -73,11 +73,16 @@ class RefinePlanRequest(BaseModel):
     fragment: str = Field(min_length=10)
     candidate: PlanCandidate           # 作者选中（可能已合并/编辑）的候选
     top_k_settings: int = Field(default=6, ge=1, le=12)
+    chapter_id: int | None = None
+    # 重新生成时带上上一版 plan_id：其中被作者锁定的字段会原样继承，
+    # 不受新一次生成影响——"保护已做的判断"落到实处
+    previous_plan_id: int | None = None
 
 
 class RefinePlanResponse(BaseModel):
     plan: ScenePlan
     raw_settings: list[RetrievedChunk]
+    plan_id: int | None = None         # 已落库的计划 id，供锁定/修改/回溯
 
 
 # --- ③ 校验写作 ----------------------------------------------------------------

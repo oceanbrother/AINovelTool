@@ -146,6 +146,54 @@ CREATE INDEX IF NOT EXISTS idx_lit_knowledge_embed
     ON literary_knowledge USING hnsw (embedding vector_cosine_ops);
 
 -- ---------------------------------------------------------------------------
+-- Narrative units and plans — structure the prose can be pointed at
+-- ---------------------------------------------------------------------------
+-- A chapter is one long blob, so nothing could refer to "the scene where he
+-- finds the note": no ordering, no setup/payoff edges, nowhere to attach a
+-- label. narrative_units supplies that handle. Chapters are NOT mirrored as
+-- rows here — scenes reference their chapter, and parent_id waits for beats.
+--
+-- narrative_plans fixes the more expensive loss: a ScenePlan used to be
+-- generated, edited, sent to the writer and dropped, discarding every decision
+-- the author made. Without it nothing can be locked against regeneration, no
+-- per-scene record exists for long-form metrics, and function labels have
+-- nowhere to live. The plan is JSONB because its shape is still moving and it
+-- is only ever fetched whole.
+
+CREATE TABLE IF NOT EXISTS narrative_units (
+    id              BIGSERIAL PRIMARY KEY,
+    project_id      BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    chapter_id      BIGINT REFERENCES chapters(id) ON DELETE CASCADE,
+    parent_id       BIGINT REFERENCES narrative_units(id) ON DELETE CASCADE,
+    level           TEXT NOT NULL DEFAULT 'scene',   -- room for 'beat' later
+    order_index     INTEGER NOT NULL DEFAULT 0,      -- order within the chapter
+    text            TEXT NOT NULL DEFAULT '',
+    surface_summary TEXT,                            -- what happened, plainly
+    scene_tag       TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_narrative_units_order
+    ON narrative_units(project_id, chapter_id, order_index);
+
+CREATE TABLE IF NOT EXISTS narrative_plans (
+    id                BIGSERIAL PRIMARY KEY,
+    project_id        BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    chapter_id        BIGINT REFERENCES chapters(id) ON DELETE SET NULL,
+    unit_id           BIGINT REFERENCES narrative_units(id) ON DELETE SET NULL,
+    fragment          TEXT,                          -- what it was planned from
+    plan              JSONB NOT NULL DEFAULT '{}'::jsonb,
+    -- ScenePlan field names the author froze; these survive regeneration
+    locked_fields     JSONB NOT NULL DEFAULT '[]'::jsonb,
+    review_status     TEXT NOT NULL DEFAULT 'pending',   -- pending/approved/rejected
+    generation_status TEXT NOT NULL DEFAULT 'planned',   -- planned/written/accepted
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_narrative_plans_project
+    ON narrative_plans(project_id, chapter_id);
+
+-- ---------------------------------------------------------------------------
 -- Story facts — who currently knows what
 -- ---------------------------------------------------------------------------
 -- The reader's awareness is deliberately separate from every character's: that

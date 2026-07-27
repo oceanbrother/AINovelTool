@@ -27,7 +27,9 @@ from app.core.config import settings
 from app.core.embedding import embed_texts
 from app.models.chapter import Chapter
 from app.models.character import Character
+from app.models.narrative import NarrativePlan
 from app.models.story_fact import StoryFact
+from app.schemas.narrative import LOCKABLE_FIELDS
 from app.schemas.refine import (
     ConstraintCheck,
     PlanCandidate,
@@ -236,6 +238,8 @@ async def expand_plan(
     fragment: str,
     candidate: PlanCandidate,
     top_k_settings: int = 6,
+    chapter_id: int | None = None,
+    previous_plan_id: int | None = None,
 ) -> RefinePlanResponse:
     # re-ground on the chosen direction (not just the fragment) so the plan's
     # settings are relevant to where the author decided to go
@@ -287,7 +291,51 @@ async def expand_plan(
         db, project_id, existing=plan.must_not
     )
 
-    return RefinePlanResponse(plan=plan, raw_settings=chunks)
+    # A decision the author froze outranks anything the planner just proposed.
+    # Applied AFTER generation rather than by asking the model to respect it:
+    # an instruction can be ignored, an overwrite cannot.
+    if previous_plan_id is not None:
+        plan = await _apply_locks(db, project_id, previous_plan_id, plan)
+
+    saved = NarrativePlan(
+        project_id=project_id,
+        chapter_id=chapter_id,
+        fragment=fragment,
+        plan=plan.model_dump(),
+        locked_fields=(
+            (await _plan_or_none(db, project_id, previous_plan_id)).locked_fields
+            if previous_plan_id is not None
+            else []
+        ),
+    )
+    db.add(saved)
+    await db.commit()
+    await db.refresh(saved)
+
+    return RefinePlanResponse(plan=plan, raw_settings=chunks, plan_id=saved.id)
+
+
+async def _plan_or_none(
+    db: AsyncSession, project_id: int, plan_id: int | None
+) -> NarrativePlan | None:
+    if plan_id is None:
+        return None
+    obj = await db.get(NarrativePlan, plan_id)
+    return obj if obj is not None and obj.project_id == project_id else None
+
+
+async def _apply_locks(
+    db: AsyncSession, project_id: int, previous_plan_id: int, plan: ScenePlan
+) -> ScenePlan:
+    """Carry frozen fields over from the previous plan, overwriting the new one."""
+    previous = await _plan_or_none(db, project_id, previous_plan_id)
+    if previous is None or not previous.locked_fields:
+        return plan
+    old = ScenePlan(**previous.plan) if previous.plan else ScenePlan()
+    for field in previous.locked_fields:
+        if field in LOCKABLE_FIELDS:
+            setattr(plan, field, getattr(old, field))
+    return plan
 
 
 async def derive_constraints(
