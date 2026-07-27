@@ -533,12 +533,34 @@ def _plan_block(plan: ScenePlan) -> str:
     return "\n".join(lines)
 
 
+_DRAFT_SYSTEM = (
+    "你是小说代笔，现在只负责**把事情写对**，不负责写得好听。\n"
+    "任务：依据【场景计划】把这一场的事件、人物动作与对白意图写完整，"
+    "满足所有必须出现项，回避所有不能发生项，保持与前文的连续性。\n"
+    "**语言保持朴素**——不追求文采、不堆砌修辞、不刻意模仿任何语感。"
+    "宁可写得像梗概，也不要为了好听而含糊掉事件。\n"
+    "只输出正文。"
+)
+
+_VOICE_SYSTEM = (
+    "你是小说代笔，现在只负责**换一种讲法**，不负责改故事。\n"
+    "给你一份【内容草稿】和【文风样本】。请依照样本的句长节奏、标点密度与用词习惯，"
+    "把草稿重新叙述一遍。\n"
+    "**不得改动**：事件及其顺序、人物的行动与选择、任何设定、信息的公开范围"
+    "（草稿没说破的，你也不能说破）。\n"
+    "**应当改动**：把直接解释情绪的句子改成行为、动作与具体物象；"
+    "让对白和细节承担情绪，而不是由叙述者代为宣布。\n"
+    "这不是润色——是按目标语感重新讲述同一件事。只输出正文。"
+)
+
+
 async def refine_write_stream(
     db: AsyncSession,
     chapter: Chapter,
     plan: ScenePlan,
     instruction: str | None = None,
     max_attempts: int = 2,
+    two_stage: bool = False,
 ):
     """Plan-conditioned generation with a constraint-verified rewrite loop.
 
@@ -571,9 +593,17 @@ async def refine_write_stream(
         user = base_user if notes is None else (
             base_user + f"\n\n【上一稿未达标】\n{notes}\n依据以上修正重写，其余约束不变。"
         )
+        # Single stage asks for events, continuity, constraints and voice in one
+        # breath; the two-stage path splits that so neither crowds the other out.
+        # The content pass sees no style samples on purpose — nothing to imitate
+        # means nothing to trade an event away for.
         draft = await llm.complete(
             [
-                {"role": "system", "content": generation._CONTINUE_SYSTEM},
+                {
+                    "role": "system",
+                    "content": _DRAFT_SYSTEM if two_stage
+                    else generation._CONTINUE_SYSTEM,
+                },
                 {"role": "user", "content": user},
             ]
         )
@@ -601,5 +631,45 @@ async def refine_write_stream(
         if passed:
             break
         notes = attempt.notes or "约束未完全达标，请对照场景计划修正。"
+
+    if two_stage and best_draft:
+        yield "stage", "声音实现：按文风样本重新叙述（不改事件与信息边界）"
+        voiced = await llm.complete(
+            [
+                {"role": "system", "content": _VOICE_SYSTEM},
+                {
+                    "role": "user",
+                    "content": (
+                        f"【文风样本】\n{chr(10).join(f'---{chr(10)}{s}' for s in style_refs)}\n\n"
+                        f"【内容草稿】\n{best_draft}"
+                    ),
+                },
+            ]
+        )
+        yield "stage", "复核：声音实现是否破坏了已达成的约束"
+        # The point of verifying twice. A voice pass that quietly drops a
+        # required object or lets a character say what the draft withheld would
+        # otherwise be invisible — the prose reads better and the scene is wrong.
+        after = await verify_draft(voiced, plan)
+        overlap = imitation.ngram_overlap(voiced, style_refs) if style_refs else 0.0
+        attempt = RefineAttempt(
+            attempt=len(attempts) + 1,
+            satisfied=after.satisfied,
+            checks=after.checks,
+            ngram_overlap=round(overlap, 4),
+            notes=_feedback_from_checks(after.checks),
+        )
+        attempts.append(attempt)
+        yield "attempt", attempt
+        before_ok = sum(c.satisfied for c in attempts[-2].checks)
+        after_ok = sum(c.satisfied for c in after.checks)
+        if after_ok >= before_ok and overlap <= imitation.NGRAM_MAX_OVERLAP:
+            best_draft = voiced
+        else:
+            # keep the plain draft: a scene that is correct and flat beats one
+            # that reads well and breaks the plan
+            yield "stage", (
+                f"声音实现使约束达成从 {before_ok} 降到 {after_ok}，保留内容草稿"
+            )
 
     yield "result", (best_draft, attempts, chunks)

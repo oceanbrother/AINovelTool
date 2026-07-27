@@ -191,7 +191,12 @@ async def refine_write(project_id: int, payload: RefineWriteRequest):
                 return
             try:
                 async for kind, data in refine.refine_write_stream(
-                    db, chapter, payload.plan, payload.instruction, payload.max_attempts
+                    db,
+                    chapter,
+                    payload.plan,
+                    payload.instruction,
+                    payload.max_attempts,
+                    two_stage=payload.two_stage,
                 ):
                     if kind == "stage":
                         yield {"event": "stage", "data": data}

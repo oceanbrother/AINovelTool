@@ -115,6 +115,9 @@ class RefineWriteRequest(BaseModel):
     plan: ScenePlan                    # 作者编辑后的场景计划
     instruction: str | None = None
     max_attempts: int = Field(default=2, ge=1, le=4)
+    # 两阶段：先写对（朴素、不给文风样本），再换讲法（不改事件与信息边界）。
+    # 声音实现后会复核约束——若达成数下降则保留内容草稿。
+    two_stage: bool = False
 
 
 class RefineWriteResponse(BaseModel):
