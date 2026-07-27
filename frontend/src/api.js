@@ -85,21 +85,11 @@ export const api = {
   deleteForeshadowing: (pid, fid) =>
     json("DELETE", `/projects/${pid}/foreshadowing/${fid}`),
 
-  composeOutline: (pid, fragment, numOutlines = 2) =>
-    json("POST", `/projects/${pid}/retrieve/compose-outline`, {
-      fragment,
-      num_outlines: numOutlines,
-    }),
-
   retrieve: (pid, query, topK = 5) =>
     json("POST", `/projects/${pid}/retrieve`, { query, top_k: topK }),
 
-  breakthrough: (pid, chapterId, state, n = 3) =>
-    json("POST", `/projects/${pid}/generate/breakthrough`, {
-      chapter_id: chapterId,
-      state,
-      num_branches: n,
-    }),
+  // compose-outline 与 breakthrough 的端点仍在后端可用，但前端不再调用：
+  // 精修的候选与计划两步已经覆盖它们，且产出的约束可校验、会落库、能锁定。
 
   // 精修 ①②：候选走向 与 场景计划（③ /refine/write 走 SSE，见下方）
   refineCandidates: (pid, fragment, n = 4) =>

@@ -2,9 +2,14 @@ import React, { useEffect, useState } from "react";
 import { api, streamImitate, streamRefineWrite } from "./api.js";
 
 // Three sections, each with focused windows:
-//   架构 — the static library: material ingest, settings, threads
+//   架构 — the static library: material ingest, settings, clues
 //   行文 — the sentence level: citations, idioms
-//   创作 — the generation pipeline: 破壁(diverge) → 细纲(stage) → 仿写(write, vetted)
+//   创作 — two ways to write: 精修(plan then verify) · 仿写(voice only)
+//
+// This used to be ten tabs. 破壁 and 细纲 were folded into 精修, whose candidate
+// and plan stages already do both jobs and do them with checkable constraints;
+// 伏笔 and 知识 became one 线索 card, because a thread IS a withheld fact and
+// registering the same story element twice let the two drift apart.
 const SECTIONS = [
   {
     key: "arch",
@@ -12,8 +17,7 @@ const SECTIONS = [
     tabs: [
       { key: "ingest", label: "素材" },
       { key: "settings", label: "设定" },
-      { key: "threads", label: "伏笔" },
-      { key: "knowledge", label: "知识" },
+      { key: "clues", label: "线索" },
     ],
   },
   {
@@ -28,10 +32,8 @@ const SECTIONS = [
     key: "create",
     label: "创作",
     tabs: [
-      { key: "branches", label: "破壁" },
-      { key: "outline", label: "细纲" },
-      { key: "imitate", label: "仿写" },
       { key: "refine", label: "精修" },
+      { key: "imitate", label: "仿写" },
     ],
   },
 ];
@@ -54,7 +56,7 @@ export default function MusePanel({
     setTabKey(SECTIONS.find((s) => s.key === key).tabs[0].key);
   };
 
-  // 细纲 → 仿写 handoff: prefill the directive and jump to the 仿写 tab
+  // 精修 → 仿写 handoff: prefill the directive and jump to the 仿写 tab
   const useForImitate = (text) => {
     onDirective?.(text);
     setSectionKey("create");
@@ -91,21 +93,11 @@ export default function MusePanel({
       </div>
       {tabKey === "ingest" && <IngestPane projectId={projectId} />}
       {tabKey === "settings" && <SettingsPane projectId={projectId} />}
-      {tabKey === "threads" && <ThreadsPane projectId={projectId} chapter={chapter} />}
-      {tabKey === "knowledge" && (
-        <KnowledgePane projectId={projectId} chapters={chapters} />
+      {tabKey === "clues" && (
+        <CluesPane projectId={projectId} chapter={chapter} chapters={chapters} />
       )}
       {tabKey === "quotes" && <QuotesPane />}
       {tabKey === "idioms" && <IdiomsPane />}
-      {tabKey === "branches" && <BranchesPane projectId={projectId} chapter={chapter} />}
-      {tabKey === "outline" && (
-        <OutlinePane
-          projectId={projectId}
-          chapter={chapter}
-          onContinue={onDirective}
-          onImitate={useForImitate}
-        />
-      )}
       {tabKey === "imitate" && (
         <ImitatePane
           projectId={projectId}
@@ -116,7 +108,13 @@ export default function MusePanel({
         />
       )}
       {tabKey === "refine" && (
-        <RefinePane projectId={projectId} chapter={chapter} onAppend={onAppend} />
+        <RefinePane
+          projectId={projectId}
+          chapter={chapter}
+          onAppend={onAppend}
+          onContinue={onDirective}
+          onImitate={useForImitate}
+        />
       )}
     </aside>
   );
@@ -170,140 +168,6 @@ const SOURCE_LABEL = {
   foreshadowing: "伏笔",
   style: "文风",
 };
-
-/* ---------- 创作 · 细纲 ---------- */
-
-function OutlinePane({ projectId, chapter, onContinue, onImitate }) {
-  const [fragment, setFragment] = useState("");
-  const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [edited, setEdited] = useState({}); // index -> author-edited directive
-  const [sentHint, setSentHint] = useState(false);
-
-  const run = async () => {
-    if (fragment.trim().length < 10) {
-      setError("给我一段正文（至少十个字），而不是一句概括。");
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    setSentHint(false);
-    try {
-      setResult(await api.composeOutline(projectId, fragment.trim(), 2));
-      setEdited({});
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const useChapterTail = () => {
-    if (chapter?.content) setFragment(chapter.content.slice(-300));
-  };
-
-  const compile = (o) =>
-    `走向：${o.direction}\n视角：${o.pov}\n入场：${o.entrances}\n` +
-    `设定引出：${o.reveals}\n节拍：\n` +
-    o.beats.map((b, i) => `${i + 1}. ${b}`).join("\n");
-
-  const directiveOf = (i, o) => (i in edited ? edited[i] : compile(o));
-
-  return (
-    <div className="pane">
-      <p className="pane-hint">
-        已经知道接下来大概往哪走时，来这里<strong>排布局</strong>：生成几条可编辑的
-        执行细纲（视角调度 / 角色入场 / 设定引出 / 节拍）。改好后 → 续写或 → 仿写生成成稿。
-      </p>
-      <textarea
-        className="ingest-text"
-        rows={4}
-        value={fragment}
-        placeholder="粘贴当前写到的正文片段…"
-        onChange={(e) => setFragment(e.target.value)}
-      />
-      <div className="ingest-actions">
-        <button className="btn ghost" onClick={useChapterTail} disabled={!chapter}>
-          取本章结尾
-        </button>
-        <button className="btn primary" onClick={run} disabled={loading}>
-          {loading ? "排布中…" : "生成细纲"}
-        </button>
-      </div>
-      {error && <p className="error">{error}</p>}
-      {sentHint && (
-        <p className="ok">已填入「往下写」的方向指引——回到稿纸点『往下写』即可生成。</p>
-      )}
-
-      {result?.options.map((o, i) => (
-        <div className="outline-card" key={i}>
-          <div className="outline-dir">{o.direction}</div>
-          <dl className="outline-fields">
-            <div><dt>视角</dt><dd>{o.pov}</dd></div>
-            <div><dt>入场</dt><dd>{o.entrances}</dd></div>
-            <div><dt>设定引出</dt><dd>{o.reveals}</dd></div>
-          </dl>
-          {o.beats.length > 0 && (
-            <ol className="outline-beats">
-              {o.beats.map((b, j) => <li key={j}>{b}</li>)}
-            </ol>
-          )}
-          {o.grounded.length > 0 && (
-            <div className="clue-strip" aria-label="细纲依据的设定">
-              <span className="clue-strip-label">依据</span>
-              {o.grounded.map((g, j) => (
-                <span className="clue-chip" key={j} title={g}>{g.slice(0, 14)}</span>
-              ))}
-            </div>
-          )}
-          <textarea
-            className="outline-edit"
-            rows={5}
-            value={directiveOf(i, o)}
-            onChange={(e) => setEdited({ ...edited, [i]: e.target.value })}
-          />
-          <div className="ingest-actions">
-            <button
-              className="btn ghost"
-              onClick={() => {
-                onContinue?.(directiveOf(i, o));
-                setSentHint(true);
-              }}
-            >
-              → 续写
-            </button>
-            <button className="btn primary" onClick={() => onImitate?.(directiveOf(i, o))}>
-              → 仿写
-            </button>
-          </div>
-        </div>
-      ))}
-
-      {result && (
-        <details className="debug-view">
-          <summary>依据：原始检索命中</summary>
-          {result.raw_settings.map((c) => (
-            <div className="slip" key={c.id} style={{ "--slip-heat": 0.3 }}>
-              <div className="slip-head">
-                <span className="slip-tag">{SOURCE_LABEL[c.source_type] || c.source_type}</span>
-                <span className="slip-score">{c.score.toFixed(3)}</span>
-              </div>
-              <p className="slip-body">{c.content}</p>
-            </div>
-          ))}
-        </details>
-      )}
-      {!result && !loading && (
-        <p className="empty">
-          破壁找到方向后，来这里把它排成可执行的细纲。
-          <br />
-          每条细纲都能改，改好交给续写或仿写写成稿。
-        </p>
-      )}
-    </div>
-  );
-}
 
 function chunkText(text, target = 400, min = 150) {
   const paras = text.split(/\n+/).map((p) => p.trim()).filter(Boolean);
@@ -708,114 +572,10 @@ function SettingsPane({ projectId }) {
   );
 }
 
-function ThreadsPane({ projectId, chapter }) {
-  const [threads, setThreads] = useState(null);
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
-  const [error, setError] = useState(null);
-
-  const reload = async () => {
-    try {
-      setThreads(await api.listForeshadowing(projectId));
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-  useEffect(() => {
-    reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
-
-  const add = async (e) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-    setError(null);
-    try {
-      await api.createForeshadowing(projectId, {
-        title: title.trim(),
-        content: content.trim() || null,
-        setup_chapter_id: chapter?.id ?? null,
-      });
-      setTitle("");
-      setContent("");
-      await reload();
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const toggle = async (t) => {
-    const patch =
-      t.status === "open"
-        ? { status: "closed", payoff_chapter_id: chapter?.id ?? null }
-        : { status: "open", payoff_chapter_id: null };
-    await api.updateForeshadowing(projectId, t.id, patch);
-    await reload();
-  };
-
-  return (
-    <div className="pane">
-      <form className="thread-form" onSubmit={add}>
-        <input
-          value={title}
-          placeholder="伏笔标题，如：老周留下的铭文"
-          onChange={(e) => setTitle(e.target.value)}
-        />
-        <textarea
-          value={content}
-          rows={2}
-          placeholder="细节（可选）：埋了什么、暗示什么"
-          onChange={(e) => setContent(e.target.value)}
-        />
-        <button className="btn primary" type="submit">
-          埋下伏笔
-        </button>
-      </form>
-      {error && <p className="error">{error}</p>}
-      {threads && threads.length === 0 && (
-        <p className="empty">
-          还没有伏笔。
-          <br />
-          埋下的伏笔会进入检索库，续写时自动被想起。
-        </p>
-      )}
-      {threads?.map((t) => (
-        <div
-          className="slip"
-          key={t.id}
-          style={{ "--slip-heat": t.status === "open" ? 1 : 0.3 }}
-        >
-          <div className="slip-head">
-            <span className="slip-tag">{t.status === "open" ? "未回收" : "已回收"}</span>
-            <span className="thread-actions">
-              <button onClick={() => toggle(t)}>
-                {t.status === "open" ? "回收" : "重新翻开"}
-              </button>
-              <button onClick={() => api.deleteForeshadowing(projectId, t.id).then(reload)}>
-                删除
-              </button>
-            </span>
-          </div>
-          <p className="slip-body">
-            <strong>{t.title}</strong>
-            {t.content && (
-              <>
-                <br />
-                {t.content}
-              </>
-            )}
-          </p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ---------- 架构 · 知识 ---------- */
-// Who knows what, with the reader tracked separately from every character —
-// that gap is the suspense. The tool compiles these into 不能发生 constraints
-// when it drafts a scene plan, so a character can't say a thing they have no
-// way of knowing and the reader can't be handed an answer too early.
+/* ---------- 架构 · 线索 ---------- */
+// 伏笔和认知状态原本是两个页签，但它们说的是同一件事：一条伏笔就是一条被隐瞒的
+// 事实。分开登记意味着同一个故事元素要录两遍，而且两边容易对不上。
+// 这里一张卡管到底：埋了没收 + 谁知道什么 + 什么时候放出来。
 
 const LEVELS = [
   ["unknown", "不知道"],
@@ -824,20 +584,23 @@ const LEVELS = [
   ["believes_false", "误信"],
 ];
 
-function KnowledgePane({ projectId, chapters = [] }) {
-  const [facts, setFacts] = useState(null);
+function CluesPane({ projectId, chapter, chapters = [] }) {
+  const [threads, setThreads] = useState(null);
+  const [facts, setFacts] = useState([]);
   const [characters, setCharacters] = useState([]);
   const [events, setEvents] = useState([]);
-  const [statement, setStatement] = useState("");
+  const [title, setTitle] = useState("");
   const [error, setError] = useState(null);
 
   const reload = async () => {
     try {
-      const [f, c, e] = await Promise.all([
+      const [t, f, c, e] = await Promise.all([
+        api.listForeshadowing(projectId),
         api.listFacts(projectId),
         api.listCharacters(projectId),
         api.listEvents(projectId),
       ]);
+      setThreads(t);
       setFacts(f);
       setCharacters(c);
       setEvents(e);
@@ -850,20 +613,23 @@ function KnowledgePane({ projectId, chapters = [] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
+  // A clue is a fact first: the awareness levels are what actually drive the
+  // constraints. Whether it is also a tracked thread (setup/payoff) is an extra
+  // the author turns on — not every fact is a thread.
   const add = async (e) => {
     e.preventDefault();
-    if (!statement.trim()) return;
+    if (!title.trim()) return;
     setError(null);
     try {
-      await api.createFact(projectId, { statement: statement.trim() });
-      setStatement("");
+      await api.createFact(projectId, { statement: title.trim() });
+      setTitle("");
       await reload();
     } catch (err) {
       setError(err.message);
     }
   };
 
-  const patch = async (fact, body) => {
+  const patchFact = async (fact, body) => {
     try {
       await api.updateFact(projectId, fact.id, body);
       await reload();
@@ -878,70 +644,110 @@ function KnowledgePane({ projectId, chapters = [] }) {
     const next = { ...fact.character_levels };
     if (level) next[charId] = level;
     else delete next[charId];
-    patch(fact, { character_levels: next });
+    patchFact(fact, { character_levels: next });
   };
+
+  const markAsThread = async (fact) => {
+    try {
+      const t = await api.createForeshadowing(projectId, {
+        title: fact.statement,
+        setup_chapter_id: chapter?.id ?? null,
+      });
+      await api.updateFact(projectId, fact.id, { foreshadowing_id: t.id });
+      await reload();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const toggleThread = async (t) => {
+    await api.updateForeshadowing(
+      projectId,
+      t.id,
+      t.status === "open"
+        ? { status: "closed", payoff_chapter_id: chapter?.id ?? null }
+        : { status: "open", payoff_chapter_id: null }
+    );
+    await reload();
+  };
+
+  const threadOf = (fact) =>
+    threads?.find((t) => t.id === fact.foreshadowing_id) || null;
+  // threads created before this merge have no fact attached yet
+  const orphanThreads = (threads || []).filter(
+    (t) => !facts.some((f) => f.foreshadowing_id === t.id)
+  );
+
+  const chapterName = (id) =>
+    chapters.find((c) => c.id === id)?.title || (id ? `章节#${id}` : null);
 
   return (
     <div className="pane">
       <p className="pane-hint">
-        登记<strong>谁现在知道什么</strong>。读者与人物分开记——
-        写场景计划时会自动生成「不能发生」的约束：没登记的角色不产生约束。
+        一条线索 = <strong>埋了没收</strong> + <strong>谁知道什么</strong>。
+        写场景计划时会自动编译成「不能发生」的约束：没登记的角色不产生约束。
       </p>
       <form className="thread-form" onSubmit={add}>
         <input
-          value={statement}
+          value={title}
           placeholder="一句话陈述，如：晴湾是被装着的"
-          onChange={(e) => setStatement(e.target.value)}
+          onChange={(e) => setTitle(e.target.value)}
         />
         <button className="btn primary" type="submit">
-          登记事实
+          登记线索
         </button>
       </form>
       {error && <p className="error">{error}</p>}
-      {facts && facts.length === 0 && (
+      {facts.length === 0 && orphanThreads.length === 0 && (
         <p className="empty">
-          还没有登记事实。
+          还没有线索。
           <br />
           登记几条之后，生成场景计划时会自动带上连续性约束。
         </p>
       )}
-      {facts?.map((f) => (
-        <div className="slip fact" key={f.id} style={{ "--slip-heat": 0.6 }}>
-          <div className="slip-head">
-            <span className="slip-tag">{f.is_true ? "属实" : "不实"}</span>
-            <span className="thread-actions">
-              <button onClick={() => patch(f, { is_true: !f.is_true })}>
-                {f.is_true ? "标为不实" : "标为属实"}
-              </button>
-              <button onClick={() => api.deleteFact(projectId, f.id).then(reload)}>
-                删除
-              </button>
-            </span>
-          </div>
-          <p className="slip-body">
-            <strong>{f.statement}</strong>
-          </p>
-          <label className="fact-row">
-            <span>读者</span>
-            <select
-              value={f.reader_level}
-              onChange={(e) => patch(f, { reader_level: e.target.value })}
-            >
-              {LEVELS.map(([v, label]) => (
-                <option key={v} value={v}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {characters.map((c) => (
-            <label className="fact-row" key={c.id}>
-              <span>{c.name}</span>
+
+      {facts.map((f) => {
+        const t = threadOf(f);
+        return (
+          <div className="slip fact" key={f.id} style={{ "--slip-heat": 0.6 }}>
+            <div className="slip-head">
+              <span className="slip-tag">
+                {t ? (t.status === "open" ? "伏笔·未收" : "伏笔·已收") : "事实"}
+                {f.is_true ? "" : " · 不实"}
+              </span>
+              <span className="thread-actions">
+                {t ? (
+                  <button onClick={() => toggleThread(t)}>
+                    {t.status === "open" ? "标为已回收" : "重新打开"}
+                  </button>
+                ) : (
+                  <button onClick={() => markAsThread(f)}>标为伏笔</button>
+                )}
+                <button onClick={() => patchFact(f, { is_true: !f.is_true })}>
+                  {f.is_true ? "标为不实" : "标为属实"}
+                </button>
+                <button onClick={() => api.deleteFact(projectId, f.id).then(reload)}>
+                  删除
+                </button>
+              </span>
+            </div>
+            <p className="slip-body">
+              <strong>{f.statement}</strong>
+            </p>
+            {t && (
+              <p className="cite">
+                埋设：{chapterName(t.setup_chapter_id) || "未记录"}
+                {t.payoff_chapter_id
+                  ? ` · 回收：${chapterName(t.payoff_chapter_id)}`
+                  : ""}
+              </p>
+            )}
+            <label className="fact-row">
+              <span>读者</span>
               <select
-                value={f.character_levels?.[String(c.id)] || ""}
-                onChange={(e) => setCharLevel(f, c.id, e.target.value)}
+                value={f.reader_level}
+                onChange={(e) => patchFact(f, { reader_level: e.target.value })}
               >
-                <option value="">未登记</option>
                 {LEVELS.map(([v, label]) => (
                   <option key={v} value={v}>
                     {label}
@@ -949,25 +755,85 @@ function KnowledgePane({ projectId, chapters = [] }) {
                 ))}
               </select>
             </label>
+            {characters.map((c) => (
+              <label className="fact-row" key={c.id}>
+                <span>{c.name}</span>
+                <select
+                  value={f.character_levels?.[String(c.id)] || ""}
+                  onChange={(e) => setCharLevel(f, c.id, e.target.value)}
+                >
+                  <option value="">未登记</option>
+                  {LEVELS.map(([v, label]) => (
+                    <option key={v} value={v}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+            <FactTimeline
+              projectId={projectId}
+              fact={f}
+              chapters={chapters}
+              characters={characters}
+              events={events.filter((e) => e.fact_id === f.id)}
+              onChange={reload}
+            />
+          </div>
+        );
+      })}
+
+      {orphanThreads.length > 0 && (
+        <>
+          <p className="pane-hint" style={{ marginTop: 14 }}>
+            以下伏笔还没登记认知状态，补上之后才会参与约束推导：
+          </p>
+          {orphanThreads.map((t) => (
+            <div className="slip" key={t.id} style={{ "--slip-heat": 0.3 }}>
+              <div className="slip-head">
+                <span className="slip-tag">
+                  {t.status === "open" ? "伏笔·未收" : "伏笔·已收"}
+                </span>
+                <span className="thread-actions">
+                  <button
+                    onClick={async () => {
+                      const f = await api.createFact(projectId, {
+                        statement: t.title,
+                        foreshadowing_id: t.id,
+                      });
+                      if (f) await reload();
+                    }}
+                  >
+                    补登记认知
+                  </button>
+                  <button onClick={() => toggleThread(t)}>
+                    {t.status === "open" ? "标为已回收" : "重新打开"}
+                  </button>
+                  <button
+                    onClick={() =>
+                      api.deleteForeshadowing(projectId, t.id).then(reload)
+                    }
+                  >
+                    删除
+                  </button>
+                </span>
+              </div>
+              <p className="slip-body">
+                <strong>{t.title}</strong>
+              </p>
+              {t.content && <p className="cite">{t.content}</p>}
+            </div>
           ))}
-          <FactTimeline
-            projectId={projectId}
-            fact={f}
-            chapters={chapters}
-            characters={characters}
-            events={events.filter((e) => e.fact_id === f.id)}
-            onChange={reload}
-          />
-        </div>
-      ))}
+        </>
+      )}
     </div>
   );
 }
 
-// The information-release schedule for one fact: who reaches which level, and
-// from which chapter. Above this the levels are the opening state; each entry
-// here overrides it from its chapter onward, so a scene planned for chapter
-// three gets chapter three's prohibitions rather than today's.
+// The information-release schedule for one clue: who reaches which level, and
+// from which chapter. The levels above are the opening state; each entry here
+// overrides it from its chapter onward, so a scene planned for chapter three
+// gets chapter three's prohibitions rather than today's.
 function FactTimeline({ projectId, fact, chapters, characters, events, onChange }) {
   const [open, setOpen] = useState(false);
   const [holder, setHolder] = useState("reader");
@@ -1016,9 +882,7 @@ function FactTimeline({ projectId, fact, chapters, characters, events, onChange 
                 {nameOf(e)} 从《{chapterOf(e.chapter_id)}》起 →{" "}
                 <strong>{LEVELS.find(([v]) => v === e.level)?.[1] || e.level}</strong>
               </span>
-              <button
-                onClick={() => api.deleteEvent(projectId, e.id).then(onChange)}
-              >
+              <button onClick={() => api.deleteEvent(projectId, e.id).then(onChange)}>
                 删除
               </button>
             </div>
@@ -1178,45 +1042,6 @@ function QuotesPane() {
 }
 
 /* ---------- 创作 ---------- */
-
-function BranchesPane({ projectId, chapter }) {
-  const pane = usePane(async (q) => {
-    if (!chapter) throw new Error("先选择一个章节");
-    const resp = await api.breakthrough(projectId, chapter.id, q);
-    return resp.branches.map((b) => ({ ...b, clues: resp.clues }));
-  });
-  return (
-    <div className="pane">
-      <AskForm pane={pane} placeholder="一句话描述当前剧情卡点" action="破壁" />
-      {pane.error && <p className="error">{pane.error}</p>}
-      {pane.loading && <p className="loading">在岔路口点灯…（约需十几秒）</p>}
-      {pane.items?.map((b, i) => (
-        <div className="branch" key={i}>
-          <span className="branch-dir">{b.direction}</span>
-          <h4>{b.title}</h4>
-          <p>{b.outline}</p>
-        </div>
-      ))}
-      {pane.items?.length > 0 && pane.items[0].clues?.length > 0 && (
-        <div className="clue-strip" aria-label="分支依据的设定">
-          <span className="clue-strip-label">依据</span>
-          {pane.items[0].clues.map((c, i) => (
-            <span className="clue-chip" key={i} title={c.content}>
-              {c.content.slice(0, 14)}
-            </span>
-          ))}
-        </div>
-      )}
-      {pane.items === null && !pane.loading && (
-        <p className="empty">
-          卡文的时候来这里：
-          <br />
-          描述剧情现状，一次拿到三条走向不同的岔路。
-        </p>
-      )}
-    </div>
-  );
-}
 
 function ImitatePane({ projectId, chapter, onAppend, directive, directiveNonce }) {
   const [instruction, setInstruction] = useState("");
@@ -1441,7 +1266,40 @@ function LockToggle({ field, locked, onToggle }) {
   );
 }
 
-function RefinePane({ projectId, chapter, onAppend }) {
+// Compile a candidate or a plan into the free-text directive that 续写 and 仿写
+// take. This is what the old 细纲 tab existed for — a light exit that skips the
+// verified write loop when the author would rather steer and type it themselves.
+function candidateToDirective(c) {
+  return [
+    `走向：${c.summary}`,
+    c.conflict_source && `冲突来源：${c.conflict_source}`,
+    c.agency && `主动/被动：${c.agency}`,
+    c.reveal_order && `信息揭示顺序：${c.reveal_order}`,
+    c.emotion_arc && `情绪走势：${c.emotion_arc}`,
+    c.turn && `转折机制：${c.turn}`,
+    c.open_question && `结尾悬念：${c.open_question}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function planToDirective(p) {
+  return [
+    p.goal && `本场目标：${p.goal}`,
+    p.desire && `角色欲望：${p.desire}`,
+    p.conflict && `冲突：${p.conflict}`,
+    p.info_shift && `信息变化：${p.info_shift}`,
+    p.emotion_curve && `情绪曲线：${p.emotion_curve}`,
+    p.must_include?.length && `必须出现：${p.must_include.join("；")}`,
+    [...(p.must_not || []), ...(p.derived_must_not || [])].length &&
+      `不能发生：${[...(p.must_not || []), ...(p.derived_must_not || [])].join("；")}`,
+    p.end_state && `结尾状态：${p.end_state}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function RefinePane({ projectId, chapter, onAppend, onContinue, onImitate }) {
   const [fragment, setFragment] = useState("");
   const [candidates, setCandidates] = useState(null); // ① options
   const [picked, setPicked] = useState({}); // index -> bool (merge set)
@@ -1630,6 +1488,8 @@ function RefinePane({ projectId, chapter, onAppend }) {
       <p className="pane-hint">
         <strong>精修</strong>：多候选走向 → 选 / 合并 → 场景计划（必须出现 / 不能发生）
         → 依计划生成 → <strong>逐条核对约束</strong>，不达标自动重写。最慢也最稳，出精稿。
+        <br />
+        任何一步都能<strong>中途退出</strong>——把候选或计划直接交给续写/仿写，自己动手写。
       </p>
 
       {/* ① 片段输入 */}
@@ -1639,7 +1499,7 @@ function RefinePane({ projectId, chapter, onAppend }) {
             className="ingest-text"
             rows={4}
             value={fragment}
-            placeholder="粘贴当前写到的正文片段…"
+            placeholder="粘贴当前写到的正文片段；卡住写不下去时，直接描述你卡在哪也行"
             onChange={(e) => setFragment(e.target.value)}
           />
           <div className="ingest-actions">
@@ -1691,6 +1551,18 @@ function RefinePane({ projectId, chapter, onAppend }) {
               }}
             >
               重来
+            </button>
+            {/* light exit: take the direction and write it yourself */}
+            <button
+              className="btn ghost"
+              onClick={() => {
+                const c = mergeSelected();
+                if (!c) return setError("先勾选至少一条候选。");
+                onContinue?.(candidateToDirective(c));
+                setNote("已填入稿纸的方向指引——回到稿纸点『往下写』。");
+              }}
+            >
+              → 续写
             </button>
             <button className="btn primary" onClick={expandPlan} disabled={busy}>
               {busy ? "排布中…" : "选中项 → 场景计划"}
@@ -1753,6 +1625,23 @@ function RefinePane({ projectId, chapter, onAppend }) {
           <div className="ingest-actions">
             <button className="btn ghost" onClick={() => setPlan(null)} disabled={busy}>
               ← 重选候选
+            </button>
+            {/* light exits: hand the plan to 续写 or 仿写 instead of the
+                verified write loop — cheaper, and the author keeps the pen */}
+            <button
+              className="btn ghost"
+              onClick={() => {
+                onContinue?.(planToDirective(plan));
+                setNote("已填入稿纸的方向指引——回到稿纸点『往下写』。");
+              }}
+            >
+              → 续写
+            </button>
+            <button
+              className="btn ghost"
+              onClick={() => onImitate?.(planToDirective(plan))}
+            >
+              → 仿写
             </button>
             <button className="btn primary" onClick={write} disabled={busy}>
               {busy ? "校验写循环运行中…" : "→ 生成成稿"}
