@@ -50,6 +50,15 @@ export const api = {
   recordOverride: (pid, payload) =>
     json("POST", `/projects/${pid}/style-overrides`, payload),
 
+  // 并入正文那一刻记录一个场景单元——那是系统唯一能观察到的自然场景边界。
+  // 有 plan_id 时同时把计划关联上并推进为 accepted。
+  createUnit: (pid, payload) =>
+    json("POST", `/projects/${pid}/narrative/units`, payload),
+  listPlans: (pid, chapterId) =>
+    json("GET", `/projects/${pid}/narrative/plans?chapter_id=${chapterId}`),
+  updatePlan: (pid, planId, payload) =>
+    json("PATCH", `/projects/${pid}/narrative/plans/${planId}`, payload),
+
 
   // 故事事实 + 谁知道它。读者认知与人物认知分开——那个落差就是悬念。
   // 派生的 must_not 由后端在生成场景计划时自动追加。
@@ -89,8 +98,13 @@ export const api = {
       fragment,
       num_candidates: n,
     }),
-  refinePlan: (pid, fragment, candidate) =>
-    json("POST", `/projects/${pid}/generate/refine/plan`, { fragment, candidate }),
+  refinePlan: (pid, fragment, candidate, chapterId = null, previousPlanId = null) =>
+    json("POST", `/projects/${pid}/generate/refine/plan`, {
+      fragment,
+      candidate,
+      chapter_id: chapterId,
+      previous_plan_id: previousPlanId,
+    }),
 
   suggestIdioms: (scene) => json("POST", "/idioms/suggest", { scene }),
   literaryQuotes: (query, category, library) =>

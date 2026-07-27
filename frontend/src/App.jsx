@@ -311,8 +311,8 @@ function Editor({ projectId, chapter, onLocalChange, directive, directiveNonce }
     const merged = content ? `${content}\n${streamText}` : streamText;
     setContent(merged);
     scheduleSave(title, merged);
+    // fire-and-forget: a failed recording must never cost the author their text
     if (suggested) {
-      // fire-and-forget: a failed recording must never cost the author their text
       api
         .recordOverride(projectId, {
           source: "continue",
@@ -322,6 +322,11 @@ function Editor({ projectId, chapter, onLocalChange, directive, directiveNonce }
         })
         .catch(() => {});
     }
+    // the merge is the scene boundary — the author just decided this passage
+    // belongs here as a unit
+    api
+      .createUnit(projectId, { chapter_id: chapter.id, text: streamText })
+      .catch(() => {});
     setStreamText(null);
     setSuggested(null);
     setStreamClues(null);

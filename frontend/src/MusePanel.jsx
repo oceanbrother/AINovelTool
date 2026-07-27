@@ -1161,6 +1161,10 @@ function ImitatePane({ projectId, chapter, onAppend, directive, directiveNonce }
     } catch (err) {
       setNote(`已并入正文；记录失败：${err.message}`);
     }
+    // 并入即场景边界，记一个场景单元
+    api
+      .createUnit(projectId, { chapter_id: chapter?.id, text: draft })
+      .catch(() => {});
     setResult(null);
     setDraft("");
   };
@@ -1310,11 +1314,33 @@ const PLAN_FIELDS = [
   ["end_state", "结尾状态"],
 ];
 
+// A locked field survives regeneration untouched. Shown inline with the field
+// it protects so the decision and its lock are never separated.
+function LockToggle({ field, locked, onToggle }) {
+  const on = locked.includes(field);
+  return (
+    <button
+      type="button"
+      className={`lock-toggle${on ? " on" : ""}`}
+      title={on ? "已锁定：重新生成不会覆盖" : "锁定后，重新生成不会覆盖这一项"}
+      aria-pressed={on}
+      onClick={(e) => {
+        e.preventDefault();
+        onToggle(field);
+      }}
+    >
+      {on ? "🔒" : "🔓"}
+    </button>
+  );
+}
+
 function RefinePane({ projectId, chapter, onAppend }) {
   const [fragment, setFragment] = useState("");
   const [candidates, setCandidates] = useState(null); // ① options
   const [picked, setPicked] = useState({}); // index -> bool (merge set)
   const [plan, setPlan] = useState(null); // ② editable ScenePlan
+  const [planId, setPlanId] = useState(null); // saved plan row — locks live here
+  const [locked, setLocked] = useState([]); // ScenePlan fields frozen by the author
   const [result, setResult] = useState(null); // ③ final draft + report
   // author's working copy; result.text stays as the model's original so the
   // (suggested, kept) pair can be recorded on accept
@@ -1382,12 +1408,36 @@ function RefinePane({ projectId, chapter, onAppend }) {
     setBusy(true);
     setError(null);
     try {
-      const resp = await api.refinePlan(projectId, fragment.trim(), candidate);
+      // passing the previous plan id carries locked fields forward untouched
+      const resp = await api.refinePlan(
+        projectId,
+        fragment.trim(),
+        candidate,
+        chapter?.id ?? null,
+        planId
+      );
       setPlan(resp.plan);
+      setPlanId(resp.plan_id ?? null);
     } catch (err) {
       setError(err.message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  // Locks live on the saved plan row, not in local state — a lock the server
+  // never heard about would be silently ignored by the next regeneration.
+  const toggleLock = async (field) => {
+    const next = locked.includes(field)
+      ? locked.filter((f) => f !== field)
+      : [...locked, field];
+    setLocked(next);
+    if (!planId) return;
+    try {
+      await api.updatePlan(projectId, planId, { plan, locked_fields: next });
+    } catch (err) {
+      setLocked(locked); // put the UI back where the server actually is
+      setError(`锁定失败：${err.message}`);
     }
   };
 
@@ -1451,9 +1501,20 @@ function RefinePane({ projectId, chapter, onAppend }) {
     } catch (err) {
       setNote(`已并入正文；记录失败：${err.message}`);
     }
+    // 并入即场景边界；带 plan_id 时把计划与成稿关联并推进为 accepted，
+    // 「计划了什么 vs 实际写了什么」从此是个有答案的问题
+    api
+      .createUnit(projectId, {
+        chapter_id: chapter?.id,
+        text: draft,
+        plan_id: planId,
+      })
+      .catch(() => {});
     setResult(null);
     setDraft("");
     setPlan(null);
+    setPlanId(null);
+    setLocked([]);
     setCandidates(null);
   };
 
@@ -1537,7 +1598,10 @@ function RefinePane({ projectId, chapter, onAppend }) {
           {plan.scene_tag && <span className="slip-tag">场景：{plan.scene_tag}</span>}
           {PLAN_FIELDS.map(([k, label]) => (
             <label className="refine-field" key={k}>
-              <span>{label}</span>
+              <span>
+                {label}
+                <LockToggle field={k} locked={locked} onToggle={toggleLock} />
+              </span>
               <textarea
                 rows={1}
                 value={plan[k] || ""}
@@ -1546,7 +1610,10 @@ function RefinePane({ projectId, chapter, onAppend }) {
             </label>
           ))}
           <label className="refine-field">
-            <span>必须出现（每行一条，会逐条核对）</span>
+            <span>
+              必须出现（每行一条，会逐条核对）
+              <LockToggle field="must_include" locked={locked} onToggle={toggleLock} />
+            </span>
             <textarea
               rows={3}
               value={(plan.must_include || []).join("\n")}
@@ -1554,7 +1621,10 @@ function RefinePane({ projectId, chapter, onAppend }) {
             />
           </label>
           <label className="refine-field">
-            <span>不能发生（每行一条，会逐条核对）</span>
+            <span>
+              不能发生（每行一条，会逐条核对）
+              <LockToggle field="must_not" locked={locked} onToggle={toggleLock} />
+            </span>
             <textarea
               rows={2}
               value={(plan.must_not || []).join("\n")}

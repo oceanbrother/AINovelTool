@@ -4,14 +4,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import func
+
 from app.db import get_session
 from app.models.narrative import NarrativePlan, NarrativeUnit
 from app.schemas.narrative import (
     LOCKABLE_FIELDS,
     NarrativePlanOut,
     NarrativePlanUpdate,
+    NarrativeUnitCreate,
     NarrativeUnitOut,
 )
+from app.services import scene
 
 router = APIRouter(prefix="/projects/{project_id}/narrative", tags=["narrative"])
 
@@ -76,6 +80,55 @@ async def delete_plan(
     obj = await _plan_or_404(db, project_id, plan_id)
     await db.delete(obj)
     await db.commit()
+
+
+@router.post("/units", response_model=NarrativeUnitOut, status_code=201)
+async def create_unit(
+    project_id: int,
+    payload: NarrativeUnitCreate,
+    db: AsyncSession = Depends(get_session),
+):
+    """Record a scene at the moment prose is merged into a chapter.
+
+    That merge is the only natural scene boundary the system actually observes:
+    the author decided this passage belongs here, as a unit. Ordering is
+    computed server-side (max + 1 within the chapter) so concurrent merges can't
+    collide on an index the client guessed.
+
+    If the passage came from a plan, the two are linked and the plan advances to
+    'accepted' — that link is what later makes "planned versus written" a
+    question with an answer.
+    """
+    next_index = (
+        await db.execute(
+            select(func.coalesce(func.max(NarrativeUnit.order_index), 0) + 1).where(
+                NarrativeUnit.project_id == project_id,
+                NarrativeUnit.chapter_id == payload.chapter_id,
+            )
+        )
+    ).scalar_one()
+
+    obj = NarrativeUnit(
+        project_id=project_id,
+        chapter_id=payload.chapter_id,
+        level="scene",
+        order_index=next_index,
+        text=payload.text,
+        # zero-LLM anchor classifier, same one the imitation loop uses
+        scene_tag=await scene.classify_text(payload.text[:500]),
+    )
+    db.add(obj)
+    await db.flush()
+
+    if payload.plan_id is not None:
+        plan = await db.get(NarrativePlan, payload.plan_id)
+        if plan is not None and plan.project_id == project_id:
+            plan.unit_id = obj.id
+            plan.generation_status = "accepted"
+
+    await db.commit()
+    await db.refresh(obj)
+    return obj
 
 
 @router.get("/units", response_model=list[NarrativeUnitOut])

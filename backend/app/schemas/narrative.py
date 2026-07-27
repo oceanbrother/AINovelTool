@@ -17,6 +17,17 @@ LOCKABLE_FIELDS = (
 )
 
 
+class NarrativeUnitCreate(BaseModel):
+    """并入正文那一刻记录的一个场景。
+
+    order_index 由服务端算（同章最大值 +1），不让前端猜——并发并入时前端猜的序号会撞。
+    """
+
+    chapter_id: int
+    text: str = Field(min_length=1)
+    plan_id: int | None = None      # 有计划来源时关联，并把计划推进为 accepted
+
+
 class NarrativeUnitOut(ORMModel):
     id: int
     chapter_id: int | None
