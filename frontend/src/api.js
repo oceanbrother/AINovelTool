@@ -68,6 +68,15 @@ export const api = {
     json("PATCH", `/projects/${pid}/story-facts/${fid}`, payload),
   deleteFact: (pid, fid) => json("DELETE", `/projects/${pid}/story-facts/${fid}`),
 
+  // 信息释放时机：谁从第几章起知道了什么。作者掌控，模型不代劳——
+  // 模型倾向尽快回答问题，因为回答会让当前场景显得完整。
+  listEvents: (pid, factId) =>
+    json("GET", `/projects/${pid}/story-facts/events${factId ? `?fact_id=${factId}` : ""}`),
+  createEvent: (pid, payload) =>
+    json("POST", `/projects/${pid}/story-facts/events`, payload),
+  deleteEvent: (pid, eventId) =>
+    json("DELETE", `/projects/${pid}/story-facts/events/${eventId}`),
+
   listForeshadowing: (pid) => json("GET", `/projects/${pid}/foreshadowing`),
   createForeshadowing: (pid, payload) =>
     json("POST", `/projects/${pid}/foreshadowing`, payload),

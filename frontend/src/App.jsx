@@ -222,6 +222,7 @@ function Workspace({ projectId }) {
       <MusePanel
         projectId={projectId}
         chapter={chapter}
+        chapters={chapters}
         onAppend={appendToChapter}
         onDirective={applyDirective}
         directive={directive}

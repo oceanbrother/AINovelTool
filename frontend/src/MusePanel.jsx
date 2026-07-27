@@ -39,6 +39,7 @@ const SECTIONS = [
 export default function MusePanel({
   projectId,
   chapter,
+  chapters = [],
   onAppend,
   onDirective,
   directive,
@@ -91,7 +92,9 @@ export default function MusePanel({
       {tabKey === "ingest" && <IngestPane projectId={projectId} />}
       {tabKey === "settings" && <SettingsPane projectId={projectId} />}
       {tabKey === "threads" && <ThreadsPane projectId={projectId} chapter={chapter} />}
-      {tabKey === "knowledge" && <KnowledgePane projectId={projectId} />}
+      {tabKey === "knowledge" && (
+        <KnowledgePane projectId={projectId} chapters={chapters} />
+      )}
       {tabKey === "quotes" && <QuotesPane />}
       {tabKey === "idioms" && <IdiomsPane />}
       {tabKey === "branches" && <BranchesPane projectId={projectId} chapter={chapter} />}
@@ -821,20 +824,23 @@ const LEVELS = [
   ["believes_false", "误信"],
 ];
 
-function KnowledgePane({ projectId }) {
+function KnowledgePane({ projectId, chapters = [] }) {
   const [facts, setFacts] = useState(null);
   const [characters, setCharacters] = useState([]);
+  const [events, setEvents] = useState([]);
   const [statement, setStatement] = useState("");
   const [error, setError] = useState(null);
 
   const reload = async () => {
     try {
-      const [f, c] = await Promise.all([
+      const [f, c, e] = await Promise.all([
         api.listFacts(projectId),
         api.listCharacters(projectId),
+        api.listEvents(projectId),
       ]);
       setFacts(f);
       setCharacters(c);
+      setEvents(e);
     } catch (err) {
       setError(err.message);
     }
@@ -944,8 +950,109 @@ function KnowledgePane({ projectId }) {
               </select>
             </label>
           ))}
+          <FactTimeline
+            projectId={projectId}
+            fact={f}
+            chapters={chapters}
+            characters={characters}
+            events={events.filter((e) => e.fact_id === f.id)}
+            onChange={reload}
+          />
         </div>
       ))}
+    </div>
+  );
+}
+
+// The information-release schedule for one fact: who reaches which level, and
+// from which chapter. Above this the levels are the opening state; each entry
+// here overrides it from its chapter onward, so a scene planned for chapter
+// three gets chapter three's prohibitions rather than today's.
+function FactTimeline({ projectId, fact, chapters, characters, events, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [holder, setHolder] = useState("reader");
+  const [level, setLevel] = useState("knows");
+  const [chapterId, setChapterId] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const nameOf = (e) =>
+    e.holder_type === "reader"
+      ? "读者"
+      : characters.find((c) => c.id === e.holder_id)?.name || `角色${e.holder_id}`;
+  const chapterOf = (id) =>
+    chapters.find((c) => c.id === id)?.title || (id ? `章节#${id}` : "开篇起");
+
+  const add = async () => {
+    setBusy(true);
+    try {
+      await api.createEvent(projectId, {
+        fact_id: fact.id,
+        holder_type: holder === "reader" ? "reader" : "character",
+        holder_id: holder === "reader" ? null : Number(holder),
+        level,
+        chapter_id: chapterId ? Number(chapterId) : null,
+      });
+      await onChange();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fact-timeline">
+      <button className="timeline-toggle" onClick={() => setOpen(!open)}>
+        {open ? "▾" : "▸"} 释放时机{events.length > 0 && ` · ${events.length} 条`}
+      </button>
+      {open && (
+        <>
+          {events.length === 0 && (
+            <p className="pane-hint">
+              未登记时机时，上面的档位一直有效。登记之后，约束会随章节推进自动变化。
+            </p>
+          )}
+          {events.map((e) => (
+            <div className="timeline-row" key={e.id}>
+              <span>
+                {nameOf(e)} 从《{chapterOf(e.chapter_id)}》起 →{" "}
+                <strong>{LEVELS.find(([v]) => v === e.level)?.[1] || e.level}</strong>
+              </span>
+              <button
+                onClick={() => api.deleteEvent(projectId, e.id).then(onChange)}
+              >
+                删除
+              </button>
+            </div>
+          ))}
+          <div className="timeline-add">
+            <select value={holder} onChange={(ev) => setHolder(ev.target.value)}>
+              <option value="reader">读者</option>
+              {characters.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <select value={chapterId} onChange={(ev) => setChapterId(ev.target.value)}>
+              <option value="">开篇起</option>
+              {chapters.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.title || `第${c.order_index}章`}
+                </option>
+              ))}
+            </select>
+            <select value={level} onChange={(ev) => setLevel(ev.target.value)}>
+              {LEVELS.map(([v, label]) => (
+                <option key={v} value={v}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <button className="btn ghost" onClick={add} disabled={busy}>
+              添加
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
