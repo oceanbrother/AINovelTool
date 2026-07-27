@@ -219,6 +219,30 @@ CREATE TABLE IF NOT EXISTS story_facts (
 );
 CREATE INDEX IF NOT EXISTS idx_story_facts_project ON story_facts(project_id);
 
+-- When someone's awareness of a fact changed. story_facts holds what is known
+-- NOW, which stops a character saying what they cannot know but cannot answer
+-- "had the reader met this before chapter N?" — the question narrative-function
+-- labelling turned out to require. A level is resolved as the most recent event
+-- at or before the chapter in question; with no events the columns on
+-- story_facts still apply, so existing rows keep working untouched.
+-- Author-controlled on purpose: deciding when something may be known is the
+-- most consequential pacing power in a long work, and a model will spend it
+-- early because a resolved scene feels complete.
+
+CREATE TABLE IF NOT EXISTS knowledge_events (
+    id          BIGSERIAL PRIMARY KEY,
+    project_id  BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    fact_id     BIGINT NOT NULL REFERENCES story_facts(id) ON DELETE CASCADE,
+    holder_type TEXT NOT NULL,          -- 'reader' | 'character'
+    holder_id   BIGINT,                 -- characters.id, for 'character' only
+    level       TEXT NOT NULL,          -- unknown/suspects/knows/believes_false
+    chapter_id  BIGINT REFERENCES chapters(id) ON DELETE CASCADE,  -- NULL = 开篇起
+    note        TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_events_fact
+    ON knowledge_events(project_id, fact_id);
+
 -- ---------------------------------------------------------------------------
 -- Author overrides — (what the tool suggested, what the author kept)
 -- ---------------------------------------------------------------------------

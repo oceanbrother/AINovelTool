@@ -29,6 +29,7 @@ project has evidence for: abstract statistics injected into a prompt measured
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Iterable, Protocol
 
 MAX_CONSTRAINTS = 6  # each one costs a check at verification time
@@ -44,7 +45,80 @@ class _Fact(Protocol):
     foreshadowing_id: int | None
 
 
-def _priority(fact: _Fact) -> tuple:
+class _Event(Protocol):
+    """models.KnowledgeEvent's shape, or a stub in tests."""
+
+    fact_id: int
+    holder_type: str
+    holder_id: int | None
+    level: str
+    chapter_id: int | None
+
+
+@dataclass
+class FactState:
+    """A fact's awareness levels as they stand at one point in the story."""
+
+    id: int
+    statement: str
+    foreshadowing_id: int | None
+    reader_level: str
+    character_levels: dict[int, str]
+
+
+def resolve_states(
+    facts: Iterable[_Fact],
+    events: Iterable[_Event],
+    chapter_order: int | None,
+    order_of: dict[int, int],
+) -> list[FactState]:
+    """Awareness as of `chapter_order`, applying events up to that point.
+
+    What a character may say depends on when the scene happens: a secret that
+    must not be spoken in chapter three is ordinary conversation by chapter
+    twelve. The columns on `story_facts` are the opening state, and each event
+    overrides it from its chapter onward — so a project that has entered no
+    events behaves exactly as it did before the timeline existed.
+
+    `chapter_order` of None means "latest": every event applies. That is the
+    right default for questions about the present rather than a past scene.
+    """
+    per_fact: dict[int, list[tuple[int, _Event]]] = {}
+    for event in events:
+        # an event with no chapter takes effect from the beginning; unknown
+        # chapter ids are treated the same way rather than silently dropped
+        at = order_of.get(event.chapter_id, -1) if event.chapter_id else -1
+        if chapter_order is not None and at > chapter_order:
+            continue  # hasn't happened yet from where we are standing
+        per_fact.setdefault(event.fact_id, []).append((at, event))
+
+    states: list[FactState] = []
+    for fact in facts:
+        reader = fact.reader_level
+        characters = {
+            int(k): v for k, v in (fact.character_levels or {}).items()
+            if str(k).lstrip("-").isdigit()
+        }
+        # stable order so two events on the same chapter resolve predictably:
+        # the later-inserted one wins, which matches how a log reads
+        for _at, event in sorted(per_fact.get(fact.id, []), key=lambda pair: pair[0]):
+            if event.holder_type == "reader":
+                reader = event.level
+            elif event.holder_id is not None:
+                characters[int(event.holder_id)] = event.level
+        states.append(
+            FactState(
+                id=fact.id,
+                statement=fact.statement,
+                foreshadowing_id=fact.foreshadowing_id,
+                reader_level=reader,
+                character_levels=characters,
+            )
+        )
+    return states
+
+
+def _priority(fact: FactState) -> tuple:
     """Sort key: most spoiler-sensitive first, ties broken deterministically.
 
     A fact attached to an unpaid-off thread is live tension, so protecting it
@@ -62,7 +136,7 @@ def _priority(fact: _Fact) -> tuple:
 
 
 def derive_must_not(
-    facts: Iterable[_Fact],
+    facts: Iterable[FactState],
     character_names: dict[int, str],
     existing: Iterable[str] = (),
     limit: int = MAX_CONSTRAINTS,

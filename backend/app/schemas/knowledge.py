@@ -34,6 +34,31 @@ class StoryFactUpdate(BaseModel):
     foreshadowing_id: int | None = None
 
 
+class KnowledgeEventCreate(BaseModel):
+    """一条认知变化：某人从某一章起，对某条事实的认知变成了什么。
+
+    chapter_id 留空表示"开篇起"——用于补录开局就成立的状态。
+    """
+
+    fact_id: int
+    holder_type: str = Field(pattern="^(reader|character)$")
+    holder_id: int | None = None          # holder_type=character 时必填
+    level: str = Field(pattern=_LEVEL_PATTERN)
+    chapter_id: int | None = None         # 从这一章起生效；空 = 开篇起
+    note: str | None = None
+
+
+class KnowledgeEventOut(ORMModel):
+    id: int
+    fact_id: int
+    holder_type: str
+    holder_id: int | None
+    level: str
+    chapter_id: int | None
+    note: str | None
+    created_at: datetime
+
+
 class StoryFactOut(ORMModel):
     id: int
     project_id: int

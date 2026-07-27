@@ -27,6 +27,7 @@ from app.core.config import settings
 from app.core.embedding import embed_texts
 from app.models.chapter import Chapter
 from app.models.character import Character
+from app.models.knowledge_event import KnowledgeEvent
 from app.models.narrative import NarrativePlan
 from app.models.story_fact import StoryFact
 from app.schemas.narrative import LOCKABLE_FIELDS
@@ -288,7 +289,7 @@ async def expand_plan(
     # remembered to write the line. Kept in their own field so the UI can show
     # where they came from and editing the plan cannot drop them.
     plan.derived_must_not = await derive_constraints(
-        db, project_id, existing=plan.must_not
+        db, project_id, existing=plan.must_not, chapter_id=chapter_id
     )
 
     # A decision the author froze outranks anything the planner just proposed.
@@ -339,9 +340,17 @@ async def _apply_locks(
 
 
 async def derive_constraints(
-    db: AsyncSession, project_id: int, existing: list[str] | None = None
+    db: AsyncSession,
+    project_id: int,
+    existing: list[str] | None = None,
+    chapter_id: int | None = None,
 ) -> list[str]:
-    """Load the project's knowledge state and compile it into must_not lines."""
+    """Compile the knowledge state into must_not lines, as of `chapter_id`.
+
+    Which constraints apply depends on when the scene happens — a secret that
+    cannot be spoken in chapter three is ordinary talk by chapter twelve — so
+    the timeline is resolved to that chapter before anything is derived.
+    """
     facts = list((await db.execute(
         select(StoryFact).where(StoryFact.project_id == project_id)
     )).scalars().all())
@@ -350,7 +359,16 @@ async def derive_constraints(
     names = dict((await db.execute(
         select(Character.id, Character.name).where(Character.project_id == project_id)
     )).all())
-    return knowledge.derive_must_not(facts, names, existing or [])
+    events = list((await db.execute(
+        select(KnowledgeEvent).where(KnowledgeEvent.project_id == project_id)
+    )).scalars().all())
+    order_of = dict((await db.execute(
+        select(Chapter.id, Chapter.order_index).where(Chapter.project_id == project_id)
+    )).all())
+    states = knowledge.resolve_states(
+        facts, events, order_of.get(chapter_id) if chapter_id else None, order_of
+    )
+    return knowledge.derive_must_not(states, names, existing or [])
 
 
 # --- ③ 校验写作 + 重写 ---------------------------------------------------------
