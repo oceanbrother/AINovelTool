@@ -356,7 +356,7 @@ function Editor({ projectId, chapter, onLocalChange, directive, directiveNonce }
         <textarea
           className="prose"
           value={content}
-          placeholder="从这里开始写。写不下去的时候，交给下面的「往下写」或「破壁」。"
+          placeholder="从这里开始写。写不下去的时候，交给下面的「往下写」，或右侧的「精修」。"
           onChange={(e) => {
             setContent(e.target.value);
             scheduleSave(title, e.target.value);

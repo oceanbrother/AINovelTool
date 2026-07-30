@@ -1066,3 +1066,72 @@ input, textarea, select {
   padding: 9px 12px;
   color: var(--paper);
 }
+
+/* --- 调校面板：提示词槽位 ------------------------------------------------ */
+/* 不是第四个版块，是版块行右端的一个开关：它改的是工具怎么说话，
+   不是这本书写什么。做成对等页签会把设置混进创作动线。 */
+.muse .sections .tuning-btn {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--ink-3, #8a8578);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.muse .sections .tuning-btn:hover { color: var(--paper); }
+.muse .sections .tuning-btn.active {
+  color: var(--cinnabar);
+  border-color: color-mix(in srgb, var(--cinnabar) 40%, transparent);
+}
+
+.prompts-pane .prompt-group-label {
+  margin: 18px 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--ink-3, #8a8578);
+  border-bottom: 1px solid color-mix(in srgb, var(--paper) 12%, transparent);
+  padding-bottom: 4px;
+}
+.prompt-row { border-bottom: 1px solid color-mix(in srgb, var(--paper) 8%, transparent); }
+.prompt-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 2px;
+  text-align: left;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+.prompt-head:hover { background: color-mix(in srgb, var(--paper) 4%, transparent); }
+.prompt-row.open .prompt-label { color: var(--cinnabar); }
+.prompt-label { flex: 1 1 auto; font-size: 13px; }
+.prompt-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.prompt-key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  color: var(--ink-3, #8a8578);
+}
+.prompt-body { padding: 4px 2px 14px; }
+.prompt-text {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--paper);
+  background: color-mix(in srgb, var(--paper) 4%, transparent);
+  border: 1px solid color-mix(in srgb, var(--paper) 14%, transparent);
+  border-radius: 3px;
+  resize: vertical;
+}
+.prompt-text:focus { outline: none; border-color: var(--cinnabar); }
+.prompt-text[readonly] { opacity: 0.72; cursor: default; }
+.prompt-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; }

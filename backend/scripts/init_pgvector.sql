@@ -344,3 +344,21 @@ CREATE TABLE IF NOT EXISTS idioms (
 );
 CREATE INDEX IF NOT EXISTS idx_idioms_embed
     ON idioms USING hnsw (embedding vector_cosine_ops);
+
+-- 作者对生成提示词的覆盖。只存覆盖，默认值留在 app/services/ 的源码里——
+-- 这样新库能直接跑，升级改了默认值也不会静默盖掉作者编辑过的内容。
+--
+-- 这里刻意不收三条量具（约束核对 / 风格评分 / 功能标注）。本项目记录的每一个
+-- 数字（约束兑现 59%→93%、kappa 0.310、两阶段 88.0% vs 72.6%）都是用那几个
+-- 字符串测出来的，让它们漂移会让新旧数字不可比，而且无从察觉。这道锁是结构性
+-- 的：verify_draft / judge_draft / 标注器都不接收 DB session，没有任何代码路径
+-- 能读到覆盖值。
+CREATE TABLE IF NOT EXISTS prompt_templates (
+    id          BIGSERIAL PRIMARY KEY,
+    key         TEXT NOT NULL UNIQUE,          -- services/prompts.py 里声明的槽位
+    body        TEXT NOT NULL,
+    revision    INTEGER NOT NULL DEFAULT 1,    -- 每次保存 +1
+    based_on    TEXT,                          -- 这次编辑分叉自哪个默认值；升级后用于提示"基线已过时"
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);

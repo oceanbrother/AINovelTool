@@ -8,7 +8,17 @@ async function json(method, url, body) {
   });
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`${resp.status} ${text.slice(0, 200)}`);
+    // FastAPI puts the human-readable reason in `detail`. Surfacing the raw JSON
+    // envelope buries it — and for 4xx the reason is the whole point, since it is
+    // usually something the author can act on (e.g. a placeholder they deleted).
+    let detail = text.slice(0, 300);
+    try {
+      const d = JSON.parse(text).detail;
+      if (typeof d === "string") detail = d;
+    } catch {
+      /* not JSON — keep the raw body */
+    }
+    throw new Error(resp.status >= 500 ? `${resp.status} ${detail}` : detail);
   }
   return resp.status === 204 ? null : resp.json();
 }
@@ -104,6 +114,14 @@ export const api = {
       chapter_id: chapterId,
       previous_plan_id: previousPlanId,
     }),
+
+  // 提示词槽位。不按项目隔离——这些是工具的指令，不是某一本书的内容；
+  // 作者修好了一条坏的计划提示词，希望它在所有项目上生效。
+  // 三条量具（约束核对/风格评分/功能标注）只读：已记录的评测数字都是用那几个
+  // 字符串产出的。后端那道锁是结构性的，前端只是把原因显示出来。
+  listPrompts: () => json("GET", "/prompts"),
+  savePrompt: (key, body) => json("PATCH", `/prompts/${key}`, { body }),
+  resetPrompt: (key) => json("POST", `/prompts/${key}/reset`),
 
   suggestIdioms: (scene) => json("POST", "/idioms/suggest", { scene }),
   literaryQuotes: (query, category, library) =>

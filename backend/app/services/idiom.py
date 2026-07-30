@@ -17,6 +17,7 @@ from app.core import llm
 from app.core.embedding import embed_text
 from app.models.idiom import Idiom
 from app.schemas.idiom import IdiomSuggestion
+from app.services import prompts
 
 _SELECT_SYSTEM = (
     "你是中文文学顾问。下面给你一段画面描述和一组【候选成语】。"
@@ -51,7 +52,7 @@ async def suggest_idioms(
         f"- {idiom.text}：{idiom.meaning}" for idiom, _ in recalled
     )
     messages = [
-        {"role": "system", "content": _SELECT_SYSTEM},
+        {"role": "system", "content": await prompts.resolve(db, "idiom.select")},
         {
             "role": "user",
             "content": (

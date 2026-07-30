@@ -19,6 +19,7 @@ from app.api import (
     narrative,
     overrides,
     projects,
+    prompts,
     retrieval,
     style,
     world,
@@ -49,6 +50,7 @@ app.include_router(generate.router)
 # v1.1 multi-source retrieval features
 app.include_router(literary.router)
 app.include_router(idioms.router)
+app.include_router(prompts.router)
 
 
 @app.get("/health", tags=["meta"])

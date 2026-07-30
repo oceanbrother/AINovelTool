@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import llm
 from app.models.chapter import Chapter
 from app.models.rolling_summary import RollingSummary
+from app.services import prompts
 
 _SUMMARY_SYSTEM = (
     "你是小说连载的剧情记录员。把【已有摘要】和【新章节】合并为一份不超过 400 字的"
@@ -40,7 +41,7 @@ async def fold_chapter(db: AsyncSession, chapter: Chapter) -> RollingSummary:
     """Merge a finalized chapter into the project's rolling summary."""
     summary = await get_or_create_summary(db, chapter.project_id)
     messages = [
-        {"role": "system", "content": _SUMMARY_SYSTEM},
+        {"role": "system", "content": await prompts.resolve(db, "summary.rolling")},
         {
             "role": "user",
             "content": (

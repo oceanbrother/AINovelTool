@@ -161,6 +161,46 @@ the edits have nothing to do with texture and no scorer should be built. Verifie
 on synthetic input: consistent 1.00, contradicted 0.00, pure noise 0.51. Below
 20 substantive pairs it refuses to conclude anything.
 
+### Tuning: prompts the author can edit, instruments they cannot
+
+Every correction five rounds of iteration bought is expressible only as prompt text —
+cap the number of functions per scene, make `goal` name an irreversible change, forbid
+the voice pass from touching information boundaries. All of it was compiled into string
+literals the author could not reach: when a plan came back wrong, the only recourse was
+to regenerate.
+
+All 12 prompts are now declared in `services/prompts.py`, split by one question — **is
+this an instrument?**
+
+| Class | Slots | Access |
+| --- | --- | --- |
+| Authoring | refine ①②③ (candidates / plan / content / voice), continue, branches, outline, idiom pick, rolling summary | **9 editable** |
+| Instruments | constraint verification, style judging, function labelling | **3 read-only** |
+
+**Why the instruments are frozen:** every number in this document (fulfilment 59%→93%,
+kappa 0.310, two-stage 88.0% vs 72.6%) came out of those exact strings. Editing one makes
+every later comparison meaningless, **with nothing to signal it happened**.
+
+**The lock is structural, not a policy.** `verify_draft(draft, plan)` and
+`judge_draft(draft, style_refs)` take no database session, so no code path can read an
+override for them. `eval/check_prompts.py` turns that into a failing check: thread a
+session into an instrument and the check goes red. Frozen but not hidden — concealing a
+measuring device is its own kind of dishonesty.
+
+Two details worth naming:
+
+- **Defaults stay in source; only overrides are stored.** A fresh database works, and an
+  upgrade that improves a default never silently overwrites an author's edit — it flags
+  the slot as sitting on a stale base and lets them decide.
+- **The UI shows each prompt's rule count and its delta from the default.** The
+  characteristic failure of editable prompts is not one bad edit, it is unbounded
+  accretion until the model treats every rule as background noise. Making the growth
+  visible is what gets rules deleted.
+
+Saves are rejected when an edit would change behaviour *without* erroring — dropping the
+`{n}` placeholder raises nothing, it just leaves the model to decide how many candidates
+to write.
+
 ## v1.1 multi-source retrieval
 
 - **Literary citations** — characters quote and discuss real literature. Two sub-libraries:
@@ -265,6 +305,10 @@ Schema: [backend/scripts/init_pgvector.sql](backend/scripts/init_pgvector.sql).
 - [x] Author-edit capture: drafts editable before merging, `(suggested, accepted)` pairs
       stored, internalisation switched to the author's version; preference analyser
       includes a direction-agreement self-test that can report "no signal"
+- [x] UI consolidation: ten tabs down to seven (the overlapping ones were the same thing)
+- [x] Tuning panel: 12 prompt slots persisted — 9 authoring prompts editable, 3
+      instruments **structurally read-only**; saves that would silently change behaviour
+      are rejected (`check_prompts.py`, zero LLM calls)
 
 ---
 

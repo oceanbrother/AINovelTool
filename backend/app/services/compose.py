@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import llm
 from app.schemas.compose import ComposeOutlineResponse, OutlineOption
-from app.services import retrieval
+from app.services import prompts, retrieval
 
 _SYSTEM = (
     "你是长篇小说作者的剧情排布助手。作者给你一段正文片段和一组【设定命中】"
@@ -72,7 +72,11 @@ async def compose_outline(
 
     raw = await llm.complete(
         [
-            {"role": "system", "content": _SYSTEM.replace("{n}", str(num_outlines))},
+            {
+                "role": "system",
+                "content": (await prompts.resolve(db, "compose.outline"))
+                .replace("{n}", str(num_outlines)),
+            },
             {
                 "role": "user",
                 "content": f"【正文片段】\n{fragment}\n\n【设定命中】\n{settings_block}",

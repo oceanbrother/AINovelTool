@@ -50,6 +50,9 @@ export default function MusePanel({
   const [sectionKey, setSectionKey] = useState("arch");
   const section = SECTIONS.find((s) => s.key === sectionKey);
   const [tabKey, setTabKey] = useState(section.tabs[0].key);
+  // 调校不是第四个版块。它改的是工具怎么说话，不是这本书写什么——
+  // 做成对等页签会把一个设置面板混进创作动线里。
+  const [tuning, setTuning] = useState(false);
 
   const switchSection = (key) => {
     setSectionKey(key);
@@ -77,7 +80,20 @@ export default function MusePanel({
             {s.label}
           </button>
         ))}
+        <span className="spacer" />
+        <button
+          className={`tuning-btn${tuning ? " active" : ""}`}
+          title="调校：查看并修改工具发出的提示词"
+          aria-pressed={tuning}
+          onClick={() => setTuning((v) => !v)}
+        >
+          调校
+        </button>
       </div>
+      {tuning ? (
+        <PromptsPane onClose={() => setTuning(false)} />
+      ) : (
+        <>
       <div className="tabs" role="tablist" aria-label="窗口">
         {section.tabs.map((t) => (
           <button
@@ -116,7 +132,197 @@ export default function MusePanel({
           onImitate={useForImitate}
         />
       )}
+        </>
+      )}
     </aside>
+  );
+}
+
+// 调校面板：把工具发出的每一条指令摆出来，能改的让改，量具只给看。
+//
+// 为什么要有这个：五轮迭代买来的纠偏全是提示词文本——限制本场功能数量、goal
+// 要写不可逆变化、声音通道不得动信息边界。它们全被编译进作者碰不到的字符串。
+// 计划生成得不对时，作者唯一的办法是重roll。
+//
+// 为什么量具不给改：README 里每个数字（约束兑现 59%→93%、kappa 0.310、
+// 两阶段 88.0% vs 72.6%）都是用那三个字符串测出来的。改一次，之后所有对比
+// 都失去意义，而且没有任何迹象。后端那道锁是结构性的（那些函数不接 session），
+// 这里只负责把理由说清楚。
+function PromptsPane({ onClose }) {
+  const [items, setItems] = useState([]);
+  const [openKey, setOpenKey] = useState(null);
+  const [drafts, setDrafts] = useState({}); // key -> 编辑中的文本
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const load = () =>
+    api
+      .listPrompts()
+      .then(setItems)
+      .catch((e) => setErr(String(e.message || e)));
+  useEffect(() => {
+    load();
+  }, []);
+
+  const bodyOf = (it) => (drafts[it.key] !== undefined ? drafts[it.key] : it.body);
+  const dirty = (it) => bodyOf(it) !== it.body;
+
+  const save = async (it) => {
+    setBusy(true);
+    setErr("");
+    try {
+      await api.savePrompt(it.key, bodyOf(it));
+      setDrafts((d) => {
+        const n = { ...d };
+        delete n[it.key];
+        return n;
+      });
+      await load();
+    } catch (e) {
+      // 422 带的是拒绝理由，作者需要看到原文
+      setErr(String(e.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reset = async (it) => {
+    setBusy(true);
+    setErr("");
+    try {
+      await api.resetPrompt(it.key);
+      setDrafts((d) => {
+        const n = { ...d };
+        delete n[it.key];
+        return n;
+      });
+      await load();
+    } catch (e) {
+      setErr(String(e.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const editable = items.filter((i) => i.editable);
+  const locked = items.filter((i) => !i.editable);
+  const nOverridden = editable.filter((i) => i.overridden).length;
+
+  const row = (it) => {
+    const open = openKey === it.key;
+    const body = bodyOf(it);
+    // 规则条数摊在面上：可编辑的提示词最典型的坏法不是改错一条，是无限追加，
+    // 加到模型把所有条都当背景噪音。让它可见，作者才会自己删。
+    const grew = it.rules - it.default_rules;
+    return (
+      <div className={`prompt-row${open ? " open" : ""}`} key={it.key}>
+        <button
+          className="prompt-head"
+          onClick={() => setOpenKey(open ? null : it.key)}
+        >
+          <span className="prompt-label">
+            {it.editable ? "" : "🔒 "}
+            {it.label}
+          </span>
+          <span className="prompt-meta">
+            <span className="prompt-key">{it.key}</span>
+            <span className="chip">{it.rules} 条规则</span>
+            {grew !== 0 && (
+              <span className={grew > 0 ? "chip warn" : "chip ok"}>
+                {grew > 0 ? `+${grew}` : grew}
+              </span>
+            )}
+            {it.overridden && <span className="chip on">已改 ×{it.revision}</span>}
+            {it.stale_base && (
+              <span className="chip warn" title="你编辑的那版默认值已被升级改动">
+                基线过时
+              </span>
+            )}
+          </span>
+        </button>
+        {open && (
+          <div className="prompt-body">
+            <p className="hint">{it.note}</p>
+            {!it.editable && (
+              <p className="pane-hint warn">
+                这是量具，只读。已记录的评测数字都是用这段字符串产出的；
+                改动会让新旧结果不可比，且无从察觉。
+              </p>
+            )}
+            {it.required.length > 0 && (
+              <p className="hint">
+                必须保留占位符：
+                {it.required.map((t) => (
+                  <code key={t} className="chip">
+                    {t}
+                  </code>
+                ))}
+              </p>
+            )}
+            <textarea
+              className="prompt-text"
+              value={body}
+              readOnly={!it.editable}
+              spellCheck={false}
+              rows={Math.min(24, Math.max(6, body.split("\n").length + 2))}
+              onChange={(e) =>
+                setDrafts((d) => ({ ...d, [it.key]: e.target.value }))
+              }
+            />
+            {it.editable && (
+              <div className="prompt-actions">
+                <button
+                  className="btn primary"
+                  disabled={busy || !dirty(it)}
+                  onClick={() => save(it)}
+                >
+                  {dirty(it) ? "保存" : "无改动"}
+                </button>
+                <button
+                  className="btn ghost"
+                  disabled={busy || (!it.overridden && !dirty(it))}
+                  onClick={() => reset(it)}
+                >
+                  恢复默认
+                </button>
+                <span className="spacer" />
+                <span className="hint">
+                  {body.length} 字符
+                  {it.overridden &&
+                    `　·　与默认相差 ${it.diff.chars > 0 ? "+" : ""}${it.diff.chars}`}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="pane prompts-pane">
+      <div className="pane-title">
+        调校
+        <span className="spacer" />
+        <button className="btn ghost" onClick={onClose}>
+          返回
+        </button>
+      </div>
+      <p className="pane-hint">
+        工具发出的每一条指令都在这里。改动立即对所有项目生效，
+        与哪一本书无关。当前改过 {nOverridden} / {editable.length} 条。
+      </p>
+      {err && <p className="error">{err}</p>}
+
+      <div className="prompt-group-label">创作类 · 可编辑</div>
+      {editable.map(row)}
+
+      <div className="prompt-group-label">量具 · 只读</div>
+      <p className="hint">
+        这三条决定了项目里所有数字的含义，所以不给改——但也不藏起来。
+      </p>
+      {locked.map(row)}
+    </div>
   );
 }
 

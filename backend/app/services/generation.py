@@ -20,7 +20,7 @@ from app.core import llm
 from app.core.config import settings
 from app.models.chapter import Chapter
 from app.schemas.generation import BranchIdea
-from app.services import literary, retrieval, scene, summary
+from app.services import literary, prompts, retrieval, scene, summary
 
 _CONTINUE_SYSTEM = (
     "你是一位都市幻想小说的资深代笔作者。依据提供的【滚动摘要】【近期正文】和"
@@ -164,7 +164,7 @@ async def continue_chapter_stream(
     if instruction:
         user += f"\n\n【方向指引】{instruction}"
     messages = [
-        {"role": "system", "content": _CONTINUE_SYSTEM},
+        {"role": "system", "content": await prompts.resolve(db, "generation.continue")},
         {"role": "user", "content": user},
     ]
     async for delta in llm.stream_complete(messages):
@@ -178,7 +178,7 @@ async def breakthrough(
     were grounded in, so the UI can surface the evidence next to the cards."""
     context, chunks = await _build_context(db, chapter, state)
     messages = [
-        {"role": "system", "content": _BREAKTHROUGH_SYSTEM},
+        {"role": "system", "content": await prompts.resolve(db, "generation.breakthrough")},
         {
             "role": "user",
             "content": (

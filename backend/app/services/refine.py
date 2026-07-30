@@ -45,6 +45,7 @@ from app.services import (
     generation,
     imitation,
     knowledge,
+    prompts,
     retrieval,
     rhythm,
     scene,
@@ -131,7 +132,11 @@ async def compose_candidates(
     )
     raw = await llm.complete(
         [
-            {"role": "system", "content": _CANDIDATES_SYSTEM.replace("{n}", str(num_candidates))},
+            {
+                "role": "system",
+                "content": (await prompts.resolve(db, "refine.candidates"))
+                .replace("{n}", str(num_candidates)),
+            },
             {
                 "role": "user",
                 "content": f"【正文片段】\n{fragment}\n\n【设定命中】\n{_settings_block(chunks)}",
@@ -250,7 +255,7 @@ async def expand_plan(
     )
     raw = await llm.complete(
         [
-            {"role": "system", "content": _PLAN_SYSTEM},
+            {"role": "system", "content": await prompts.resolve(db, "refine.plan")},
             {
                 "role": "user",
                 "content": (
@@ -601,8 +606,9 @@ async def refine_write_stream(
             [
                 {
                     "role": "system",
-                    "content": _DRAFT_SYSTEM if two_stage
-                    else generation._CONTINUE_SYSTEM,
+                    "content": await prompts.resolve(
+                        db, "refine.draft" if two_stage else "generation.continue"
+                    ),
                 },
                 {"role": "user", "content": user},
             ]
@@ -636,7 +642,7 @@ async def refine_write_stream(
         yield "stage", "声音实现：按文风样本重新叙述（不改事件与信息边界）"
         voiced = await llm.complete(
             [
-                {"role": "system", "content": _VOICE_SYSTEM},
+                {"role": "system", "content": await prompts.resolve(db, "refine.voice")},
                 {
                     "role": "user",
                     "content": (
