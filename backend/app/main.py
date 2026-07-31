@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import (
     chapters,
     characters,
+    deconstruct,
     facts,
     foreshadowing,
     generate,
@@ -51,6 +52,7 @@ app.include_router(generate.router)
 app.include_router(literary.router)
 app.include_router(idioms.router)
 app.include_router(prompts.router)
+app.include_router(deconstruct.router)
 
 
 @app.get("/health", tags=["meta"])

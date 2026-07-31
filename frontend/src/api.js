@@ -119,6 +119,17 @@ export const api = {
   // 作者修好了一条坏的计划提示词，希望它在所有项目上生效。
   // 三条量具（约束核对/风格评分/功能标注）只读：已记录的评测数字都是用那几个
   // 字符串产出的。后端那道锁是结构性的，前端只是把原因显示出来。
+  // 拆书：语料是跨项目的（一本作者在学的书），所以不带 projectId。
+  // 标注结果落 style_data/，被 .gitignore 挡住——它内嵌参考作品原文。
+  listCorpora: () => json("GET", "/deconstruct/works"),
+  labelTaxonomy: () => json("GET", "/deconstruct/taxonomy"),
+  buildLabelQueue: (work, n = 300, seed = 0) =>
+    json("POST", "/deconstruct/queue", { work, n, seed }),
+  nextToLabel: (work) =>
+    json("GET", `/deconstruct/next?work=${encodeURIComponent(work)}`),
+  saveLabel: (work, id, label, reason = "") =>
+    json("POST", "/deconstruct/label", { work, id, label, reason }),
+
   listPrompts: () => json("GET", "/prompts"),
   savePrompt: (key, body) => json("PATCH", `/prompts/${key}`, { body }),
   resetPrompt: (key) => json("POST", `/prompts/${key}/reset`),

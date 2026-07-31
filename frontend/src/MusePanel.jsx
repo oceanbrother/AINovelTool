@@ -53,6 +53,9 @@ export default function MusePanel({
   // 调校不是第四个版块。它改的是工具怎么说话，不是这本书写什么——
   // 做成对等页签会把一个设置面板混进创作动线里。
   const [tuning, setTuning] = useState(false);
+  // 拆书同理，而且更远：它处理的是别人的书，跨项目共用，跟当前这一章无关。
+  // 两个开关互斥——同时打开两个接管式面板没有意义。
+  const [decon, setDecon] = useState(false);
 
   const switchSection = (key) => {
     setSectionKey(key);
@@ -82,15 +85,31 @@ export default function MusePanel({
         ))}
         <span className="spacer" />
         <button
+          className={`tuning-btn${decon ? " active" : ""}`}
+          title="拆书：把一本参考作品标成金标准（跨项目，结果留在本机）"
+          aria-pressed={decon}
+          onClick={() => {
+            setDecon((v) => !v);
+            setTuning(false);
+          }}
+        >
+          拆书
+        </button>
+        <button
           className={`tuning-btn${tuning ? " active" : ""}`}
           title="调校：查看并修改工具发出的提示词"
           aria-pressed={tuning}
-          onClick={() => setTuning((v) => !v)}
+          onClick={() => {
+            setTuning((v) => !v);
+            setDecon(false);
+          }}
         >
           调校
         </button>
       </div>
-      {tuning ? (
+      {decon ? (
+        <DeconstructPane onClose={() => setDecon(false)} />
+      ) : tuning ? (
         <PromptsPane onClose={() => setTuning(false)} />
       ) : (
         <>
@@ -135,6 +154,199 @@ export default function MusePanel({
         </>
       )}
     </aside>
+  );
+}
+
+// 拆书面板：把参考作品一场一场标成金标准。
+//
+// 为什么值得做一个界面：这批标注的瓶颈是作者的分钟数，不是算法。功能标签闸门
+// 已经两次未过，两次都是因为少数类样本太少（转折 2 条、回收 2 条，无法判定）。
+// 命令行脚本打印 300 段读 stdin，没人标得完，而标不完的金标准一文不值。
+//
+// 为什么是随机而不是分层：分层需要一个能把转折捞出来的候选器。写过两个
+// （罕见词长程复现 / 纹理断点），拿仅有的真金标准一验，转折通道 67% 百分位——
+// 比随机还差。负结果记在 services/deconstruct.py 里。随机更费作者时间，但换来
+// 一个能解释的准确率和 kappa。
+//
+// 三条不能松的：
+// · 盲标。不给模型猜测，不给通道来源，也不给已标各类的计数——作者看见自己连答
+//   了四十个「信息」，就会开始找理由答别的，闸门量到的就成了那个漂移。
+// · 跳过要记账。判不了的场景硬标是在制造噪声；但静默丢弃更糟——30% 的跳过率
+//   本身就是关于分类学的发现。
+// · 键盘优先。1/2/3/4 打标签，0 跳过，全程不用碰鼠标。
+function DeconstructPane({ onClose }) {
+  const [works, setWorks] = useState([]);
+  const [work, setWork] = useState("");
+  const [taxonomy, setTaxonomy] = useState([]);
+  const [item, setItem] = useState(null);
+  const [prog, setProg] = useState(null);
+  const [done, setDone] = useState(false);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    Promise.all([api.listCorpora(), api.labelTaxonomy()])
+      .then(([w, t]) => {
+        setWorks(w);
+        setTaxonomy(t);
+        const first = w.find((x) => x.built) || w[0];
+        if (first) setWork(first.work);
+      })
+      .catch((e) => setErr(String(e.message || e)));
+  }, []);
+
+  const pull = (w) =>
+    api
+      .nextToLabel(w)
+      .then((r) => {
+        setDone(r.done);
+        setItem(r.done ? null : r.item);
+        setProg(r);
+        setReason("");
+        // 下拉里的计数和进度条读的是同一份数字，不同步就会一个显示 0/300、
+        // 一个显示 1/300，让人以为刚才那一下没存上。
+        setWorks((ws) => ws.map((x) => (x.work === w ? { ...x, ...r } : x)));
+      })
+      .catch((e) => setErr(String(e.message || e)));
+
+  useEffect(() => {
+    if (work && works.find((x) => x.work === work)?.built) pull(work);
+  }, [work, works]);
+
+  const start = () => {
+    setBusy(true);
+    setErr("");
+    api
+      .buildLabelQueue(work, 300, 0)
+      .then((p) => {
+        setProg(p);
+        setWorks((ws) => ws.map((x) => (x.work === work ? { ...x, ...p } : x)));
+        return pull(work);
+      })
+      .catch((e) => setErr(String(e.message || e)))
+      .finally(() => setBusy(false));
+  };
+
+  const send = (label) => {
+    if (!item || busy) return;
+    setBusy(true);
+    setErr("");
+    api
+      .saveLabel(work, item.id, label, reason.trim())
+      .then(() => pull(work))
+      .catch((e) => setErr(String(e.message || e)))
+      .finally(() => setBusy(false));
+  };
+
+  // 数字键直达。输入理由时不劫持按键——那里要能打字。
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!item || busy) return;
+      if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
+      const i = "1234".indexOf(e.key);
+      if (i >= 0 && taxonomy[i]) send(taxonomy[i].name);
+      else if (e.key === "0") send("跳过");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [item, busy, taxonomy, reason, work]);
+
+  const built = works.find((x) => x.work === work)?.built || prog?.built;
+  const pct = prog?.total ? Math.round((prog.seen / prog.total) * 100) : 0;
+
+  return (
+    <div className="pane decon-pane">
+      <header className="pane-head">
+        拆书
+        <span className="muted">
+          把一本你在学的书标成金标准 · 结果留在本机
+        </span>
+        <button className="ghost" onClick={onClose}>
+          收起
+        </button>
+      </header>
+
+      {err && <p className="err">{err}</p>}
+
+      <div className="decon-bar">
+        <select value={work} onChange={(e) => setWork(e.target.value)}>
+          {works.map((w) => (
+            <option key={w.work} value={w.work}>
+              {w.work}
+              {w.built ? ` · ${w.seen}/${w.total}` : " · 未开始"}
+            </option>
+          ))}
+        </select>
+        {!built && (
+          <button className="primary" disabled={!work || busy} onClick={start}>
+            随机抽 300 场开始
+          </button>
+        )}
+        {prog?.built && (
+          <span className="decon-prog" title={prog.gold_file}>
+            <i style={{ width: `${pct}%` }} />
+            <b>
+              {prog.seen}/{prog.total}
+            </b>
+            {prog.skipped > 0 && <em>跳过 {prog.skipped}</em>}
+          </span>
+        )}
+      </div>
+
+      {!built && (
+        <p className="hint">
+          随机抽样，不做分层。分层需要一个能把少数类捞出来的候选器，写过两个都没
+          过验证（负结果见 <code>services/deconstruct.py</code>）。随机更费时间，
+          但换来一个能解释的准确率。
+        </p>
+      )}
+
+      {done && (
+        <p className="hint ok">
+          这一批标完了。用 <code>eval/run_function_agreement.py --work {work}
+          {" "}--gold ../{prog?.gold_file}</code> 过闸门。
+        </p>
+      )}
+
+      {item && (
+        <>
+          <div className="decon-scene">
+            {item.context_before && (
+              <p className="decon-ctx">…{item.context_before}</p>
+            )}
+            <div className="decon-text">
+              {item.text.split("\n").map((p, i) => (
+                <p key={i}>{p}</p>
+              ))}
+            </div>
+          </div>
+
+          <div className="decon-choices">
+            {taxonomy.map((t, i) => (
+              <button key={t.name} disabled={busy} onClick={() => send(t.name)}>
+                <kbd>{i + 1}</kbd>
+                <b>{t.name}</b>
+                <span>{t.meaning}</span>
+                <em>{t.test}</em>
+              </button>
+            ))}
+            <button className="skip" disabled={busy} onClick={() => send("跳过")}>
+              <kbd>0</kbd>
+              <b>判不了</b>
+              <span>硬标是在制造噪声，跳过会被记账</span>
+            </button>
+          </div>
+
+          <input
+            className="decon-reason"
+            placeholder="理由（可空）——判错时它是唯一能看出分类学哪里坏了的东西"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+        </>
+      )}
+    </div>
   );
 }
 

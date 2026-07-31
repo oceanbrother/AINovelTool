@@ -47,6 +47,8 @@ its own ideas and **records the null results, then stops building**:
 | --- | --- | --- | --- |
 | Scene-aligned sample recall | same-scene examples read closer | style 5.5 vs 4.7 — inside the noise (n=10) | harness kept, claim dropped |
 | Rhythm prior in the prompt | feed the measured rhythm back in | distance **1.219 vs 0.619**, style **3.25 vs 4.65** — both worse | **not wired into generation** |
+| Two state scales | score character pressure and narrative pressure apart; the gap is suspense | each axis test-retests at QWK **0.765 / 0.849** and clears the gate, but **cross-axis 0.721 ≈ the noise floor 0.765** | **B4/B9/G3 not built on the pair**; ask for the gap once instead |
+| Deconstruction candidate channels | structural signals can surface minority classes for stratified sampling | against real hand labels, the 转折 channel ranks at the **67th percentile — worse than chance**; 回收 at 35th (n=2) | harness kept, not wired in; sample at random instead |
 | Five scene labels | finer categories, better labels | 0.396 accuracy against a human gold set | taxonomy rebuilt; four labels reach 0.789 |
 
 One principle runs through all of it:
@@ -201,6 +203,16 @@ Saves are rejected when an edit would change behaviour *without* erroring — dr
 `{n}` placeholder raises nothing, it just leaves the model to decide how many candidates
 to write.
 
+### Two ways a measurement can fail
+
+The state-scale result is worth separating from the others. The earlier null
+results failed on **reliability** — the labeller could not reproduce itself. This
+one failed on **validity**: reliability was high, and the two instruments were
+measuring the same thing anyway. Subtracting one score from the other compounds
+both errors, so a high per-axis kappa buys nothing when the gap between the axes
+is the size of the noise. (Boundary: the sample is collapse-driven narrative,
+70% in the top two bands, so the finding covers the high-pressure range only.)
+
 ## v1.1 multi-source retrieval
 
 - **Literary citations** — characters quote and discuss real literature. Two sub-libraries:
@@ -309,6 +321,10 @@ Schema: [backend/scripts/init_pgvector.sql](backend/scripts/init_pgvector.sql).
 - [x] Tuning panel: 12 prompt slots persisted — 9 authoring prompts editable, 3
       instruments **structurally read-only**; saves that would silently change behaviour
       are rejected (`check_prompts.py`, zero LLM calls)
+- [x] State-scale reliability gate: ask whether the labeller agrees with *itself*
+      before comparing it to anyone. **Two axes proved redundant; stopped there**
+- [x] Deconstruction panel: 300 random scenes, keyboard labelling (1-4, 0 to skip),
+      blind by construction and skips recorded; output shares the v1 gold schema
 
 ---
 
