@@ -204,15 +204,21 @@ function DeconstructPane({ onClose }) {
         setItem(r.done ? null : r.item);
         setProg(r);
         setReason("");
-        // 下拉里的计数和进度条读的是同一份数字，不同步就会一个显示 0/300、
-        // 一个显示 1/300，让人以为刚才那一下没存上。
-        setWorks((ws) => ws.map((x) => (x.work === w ? { ...x, ...r } : x)));
       })
       .catch((e) => setErr(String(e.message || e)));
 
+  // 只由 work 触发。
+  //
+  // 曾经这里依赖 [work, works]，而 pull() 里又 setWorks(...) 去同步下拉框的
+  // 计数——map 每次返回新数组，引用一变就重新触发本 effect，再 pull，再
+  // setWorks，自激。实测 665,781 次 GET /next 对 153 次 POST /label（每存一条
+  // 打约 4,350 次请求），每个响应带一整场正文，标注到第 150 条时标签页耗尽内存。
+  //
+  // 当时那个改动是视觉验过的：计数确实同步了。单次交互看不见循环，只有累计请求
+  // 数看得见——所以这类改动之后要数请求，不是看画面。
   useEffect(() => {
-    if (work && works.find((x) => x.work === work)?.built) pull(work);
-  }, [work, works]);
+    if (work) pull(work);
+  }, [work]);
 
   const start = () => {
     setBusy(true);
@@ -221,7 +227,6 @@ function DeconstructPane({ onClose }) {
       .buildLabelQueue(work, 300, 0)
       .then((p) => {
         setProg(p);
-        setWorks((ws) => ws.map((x) => (x.work === work ? { ...x, ...p } : x)));
         return pull(work);
       })
       .catch((e) => setErr(String(e.message || e)))
@@ -252,7 +257,9 @@ function DeconstructPane({ onClose }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [item, busy, taxonomy, reason, work]);
 
-  const built = works.find((x) => x.work === work)?.built || prog?.built;
+  // prog 是唯一权威：它每次 pull 都刷新。works 只在挂载时取一次，用来填下拉框，
+  // 之后不再更新——它一更新就会和上面那个 effect 形成回路。
+  const built = prog?.built ?? works.find((x) => x.work === work)?.built;
   const pct = prog?.total ? Math.round((prog.seen / prog.total) * 100) : 0;
 
   return (
@@ -271,12 +278,17 @@ function DeconstructPane({ onClose }) {
 
       <div className="decon-bar">
         <select value={work} onChange={(e) => setWork(e.target.value)}>
-          {works.map((w) => (
-            <option key={w.work} value={w.work}>
-              {w.work}
-              {w.built ? ` · ${w.seen}/${w.total}` : " · 未开始"}
-            </option>
-          ))}
+          {works.map((w) => {
+            // 选中那一项读 prog（实时），其余读挂载时的快照。两处都显示会不同步，
+            // 而"下拉说 0/300、进度条说 151/300"看起来就像刚才那一下没存上。
+            const p = w.work === work && prog?.built ? prog : w;
+            return (
+              <option key={w.work} value={w.work}>
+                {w.work}
+                {p.built ? ` · ${p.seen}/${p.total}` : " · 未开始"}
+              </option>
+            );
+          })}
         </select>
         {!built && (
           <button className="primary" disabled={!work || busy} onClick={start}>
@@ -302,7 +314,8 @@ function DeconstructPane({ onClose }) {
         </p>
       )}
 
-      {done && (
+      {/* 队列没建时后端也回 done=true（没有待标项），不加 built 会显示"标完了" */}
+      {done && built && (
         <p className="hint ok">
           这一批标完了。用 <code>eval/run_function_agreement.py --work {work}
           {" "}--gold ../{prog?.gold_file}</code> 过闸门。

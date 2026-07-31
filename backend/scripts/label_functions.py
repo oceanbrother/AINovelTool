@@ -105,12 +105,24 @@ def export_gold(rows: list[CorpusSegment], n: int, seed: int) -> str:
     return path
 
 
-async def run_llm(db, rows: list[CorpusSegment], limit: int, seed: int) -> None:
-    """Label with the judge model — gold items first, so llm-vs-gold is measurable."""
+async def run_llm(
+    db, rows: list[CorpusSegment], limit: int, seed: int, gold: str | None = None
+) -> None:
+    """Label with the judge model — gold items first, so llm-vs-gold is measurable.
+
+    `gold` names the hand-labelled set to prioritise. It used to be a hardcoded
+    pair of filenames, which silently mislabelled the wrong 40 segments the
+    moment a second gold set existed: the run reported success, the agreement
+    script then found 7 overlapping items and printed kappa 0.000. Nothing in
+    either output said "these two files are about different scenes".
+    """
     gold_ids: set[int] = set()
-    for name in ("function_gold.v1.json", "function_gold.todo.json"):
-        path = os.path.join(OUT_DIR, name)
+    candidates = (gold,) if gold else ("function_gold.v1.json", "function_gold.todo.json")
+    for name in candidates:
+        path = name if os.path.isabs(name) else os.path.join(OUT_DIR, name)
         if not os.path.exists(path):
+            if gold:
+                raise SystemExit(f"gold file not found: {path}")
             continue
         try:
             with open(path, encoding="utf-8") as fh:
@@ -175,6 +187,7 @@ async def main() -> None:
     ap.add_argument("--llm", action="store_true")
     ap.add_argument("--limit", type=int, default=300)
     ap.add_argument("--seed", type=int, default=20260727)
+    ap.add_argument("--gold", help="要优先标注的人工金标准文件（默认沿用旧的搜索顺序）")
     args = ap.parse_args()
 
     async with AsyncSessionLocal() as db:
@@ -187,7 +200,7 @@ async def main() -> None:
             path = export_gold(rows, args.export_gold, args.seed)
             print(f"gold worksheet → {path}\n  填好 label 后另存为 function_gold.v1.json")
         if args.llm:
-            await run_llm(db, rows, args.limit, args.seed)
+            await run_llm(db, rows, args.limit, args.seed, args.gold)
 
 
 if __name__ == "__main__":

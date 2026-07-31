@@ -1,6 +1,51 @@
 # -*- coding: utf-8 -*-
 """Narrative function labels — what a scene DOES to the story.
 
+    ┌──────────────────────────────────────────────────────────────────────┐
+    │ ABANDONED. Three attempts at the gate, and the third one answered    │
+    │ the question instead of running out of data. Nothing may be built on │
+    │ these labels: no function_embedding, no function-aware retrieval.    │
+    │ The taxonomy and prompt stay for the record and for the eval that    │
+    │ produced the verdict.                                                │
+    └──────────────────────────────────────────────────────────────────────┘
+
+Final measurement, 294 hand-labelled scenes from a 300-scene random draw
+(`eval/run_function_agreement.py --work 龙族`):
+
+    accuracy 0.724 · kappa 0.246 · majority baseline 0.762 → **-0.037**
+
+    recall by hand label   信息 196/224 (88%)   升级 11/39 (28%)
+                           转折   2/16  (13%)   回收  4/15 (27%)
+    top confusions         升级→信息 ×19 · 信息→升级 ×16
+                           转折→信息 ×12 · 回收→信息 ×11
+
+A program that says 信息 and nothing else scores higher than the classifier.
+That is not "close" — the labeller has no value on this task.
+
+Why this attempt settles it where the first two did not: those runs had 2
+instances of each minority class and honestly reported "no verdict available".
+This one had 16 转折 and 15 回收 — enough to answer — and the answer is that
+three quarters of the reversals are read as exposition.
+
+The merge scan points somewhere not worth going. 信息+升级 → 0.844 (+0.119) is
+the only pair above the merge threshold, and collapsing it leaves three labels
+of which one covers 88% of scenes. That is a binary "did the story move", and a
+binary label cannot retrieve a scene that does what the next one needs to do —
+which was the entire purpose.
+
+The author's labels are the durable asset here and are not wasted: they are what
+turned this from "insufficient data" into a decision. Kept in `style_data/`.
+
+One cost worth recording for next time: 1 of 294 items carries a written reason.
+Without them there is no way to separate "the model cannot see 转折" from "转折
+is not stable as a category in this prose" — two findings with opposite fixes.
+The 40-item v1 set had reasons on every row, and that is what produced the 6→4
+taxonomy revision. Reasons scale worse than labels and are worth more.
+
+---
+
+Original design notes follow.
+
 Retrieval can already find prose that *reads* like the current draft. It cannot
 find a scene that *does* what the next one needs to do — raise the pressure,
 pay off a thread, let the reader breathe. That gap is what these labels close.

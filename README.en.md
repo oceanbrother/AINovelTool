@@ -49,6 +49,7 @@ its own ideas and **records the null results, then stops building**:
 | Rhythm prior in the prompt | feed the measured rhythm back in | distance **1.219 vs 0.619**, style **3.25 vs 4.65** — both worse | **not wired into generation** |
 | Two state scales | score character pressure and narrative pressure apart; the gap is suspense | each axis test-retests at QWK **0.765 / 0.849** and clears the gate, but **cross-axis 0.721 ≈ the noise floor 0.765** | **B4/B9/G3 not built on the pair**; ask for the gap once instead |
 | Deconstruction candidate channels | structural signals can surface minority classes for stratified sampling | against real hand labels, the 转折 channel ranks at the **67th percentile — worse than chance**; 回收 at 35th (n=2) | harness kept, not wired in; sample at random instead |
+| Four-way function labels (third attempt) | 300 hand-labelled scenes will settle whether the labeller works | n=294: accuracy **0.724**, kappa 0.246, **below the 0.762 majority baseline**; 转折 recall **2/16** | **line abandoned** — no function_embedding, no function-aware retrieval |
 | Five scene labels | finer categories, better labels | 0.396 accuracy against a human gold set | taxonomy rebuilt; four labels reach 0.789 |
 
 One principle runs through all of it:
@@ -203,6 +204,30 @@ Saves are rejected when an edit would change behaviour *without* erroring — dr
 `{n}` placeholder raises nothing, it just leaves the model to decide how many candidates
 to write.
 
+### The one line that was stopped for good
+
+"Retrieve a reference scene by what it *does*" was the most ambitious idea here and
+the only one formally abandoned. It failed the gate three times, but only the third
+run answered the question. The first two had 2 instances of each minority class and
+honestly reported "no verdict available". The third had 16 转折 and 15 回收 —
+enough to decide — and the decision is that the labeller cannot see them: 转折
+recall 2/16, three quarters read as exposition, and overall accuracy **below** the
+trivial baseline. A program that only ever answers 信息 scores higher.
+
+The merge scan points nowhere worth going. 信息+升级 → 0.844 (+0.119) is the only
+pair over the threshold, and collapsing it leaves three labels with one covering 88%
+of scenes. That is a binary "did the story move", and a binary label cannot retrieve
+a scene that does what the next one needs to do — the entire reason the line existed.
+
+The 300 hand labels are not a sunk cost: they are what turned this from "not enough
+data" into a decision that could be acted on.
+
+One cost worth recording: 1 of 294 rows carries a written reason. Without them there
+is no way to separate "the model cannot see 转折" from "转折 is not a stable category
+in this prose" — two findings with opposite fixes. The 40-row v1 set had a reason on
+every item, and that is what produced the 6→4 taxonomy revision. Reasons scale worse
+than labels and are worth more.
+
 ### Two ways a measurement can fail
 
 The state-scale result is worth separating from the others. The earlier null
@@ -281,6 +306,9 @@ Every number above is reproducible — see [backend/eval/README.md](backend/eval
 | Label-agreement gate (accuracy + Cohen's kappa vs human gold) | `eval/run_mode_agreement.py` |
 | Rhythm profile (transition matrix / density curves / chapter endings) | `eval/run_rhythm_profile.py` |
 | Rhythm prior A/B (**null result**, not shipped) | `eval/run_rhythm_ablation.py` |
+| Function-label gate (**null result, final**) | `eval/run_function_agreement.py` |
+| State-scale test-retest (**null result**) | `eval/run_state_reliability.py` |
+| Prompt-layer invariants (zero LLM) | `eval/check_prompts.py` |
 | Author-edit preference, with a direction-agreement self-test | `eval/run_override_profile.py` |
 
 > Environment: Windows 11 / CPU inference (bge-m3) / DeepSeek V4 (generate deepseek-v4-flash · judge deepseek-v4-pro) / pgvector HNSW.
@@ -325,6 +353,8 @@ Schema: [backend/scripts/init_pgvector.sql](backend/scripts/init_pgvector.sql).
       before comparing it to anyone. **Two axes proved redundant; stopped there**
 - [x] Deconstruction panel: 300 random scenes, keyboard labelling (1-4, 0 to skip),
       blind by construction and skips recorded; output shares the v1 gold schema
+- [x] ~~Function-aware retrieval~~ **abandoned**: three failed gates, the third with
+      a clear negative (accuracy below the trivial baseline, 转折 recall 2/16)
 
 ---
 
