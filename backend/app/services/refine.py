@@ -19,6 +19,8 @@ from __future__ import annotations
 import json
 import re
 
+import httpx
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -61,24 +63,89 @@ MAX_DIRECT_EMOTION = 1
 REPETITION_THRESHOLD = 0.80
 
 
+class PlanParseError(RuntimeError):
+    """The planner returned something that is not a scene plan.
+
+    Raised rather than returning {} because an empty dict becomes an empty
+    ScenePlan — no goal, no must_include, no must_not — and the write step then
+    proceeds happily with zero constraints. Every constraint-fulfilment number
+    this project reports comes from those lists, so a silent empty plan does not
+    degrade the feature, it removes it while still looking like it ran.
+
+    Seen in practice: a 1781-character planning prompt against max_tokens=2048
+    came back with `content: ""` (the budget went to the model's own reasoning),
+    three times out of three, and the pipeline reported success each time.
+    """
+
+
 def _parse_json(raw: str) -> dict:
+    if not raw.strip():
+        raise PlanParseError(
+            "planner returned empty content — usually max_tokens exhausted "
+            "before any visible output; raise LLM_MAX_TOKENS or shorten the prompt"
+        )
     match = re.search(r"\{.*\}", raw, re.DOTALL)
     if not match:
-        return {}
+        raise PlanParseError(f"no JSON object in planner output: {raw[:200]!r}")
     try:
         return json.loads(match.group())
-    except json.JSONDecodeError:
-        return {}
+    except json.JSONDecodeError as exc:
+        raise PlanParseError(
+            f"planner output is not valid JSON ({exc}); likely truncated "
+            f"mid-object: …{match.group()[-120:]!r}"
+        ) from exc
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
     return sum(x * y for x, y in zip(a, b))
 
 
-def _settings_block(chunks: list) -> str:
+def _settings_block(chunks: list, cap: int = 0) -> str:
+    def body(c) -> str:
+        return c.content if cap <= 0 or len(c.content) <= cap else c.content[:cap] + "…"
+
     return "\n".join(
-        f"[设定{i}] ({c.source_type}) {c.content}" for i, c in enumerate(chunks)
+        f"[设定{i}] ({c.source_type}) {body(c)}" for i, c in enumerate(chunks)
     ) or "（无命中；可基于片段本身构思，设定引用留空）"
+
+
+_BRIEF_SYSTEM = (
+    "把给定的正文片段压成一段**前情提要**，供另一个模型据此规划下一场。\n"
+    "只写发生了什么、谁在场、结束在什么状态上，不要评价，不要描写，不要展开。\n"
+    "120 字以内，一段话，不分行。"
+)
+
+
+async def _plot_brief(fragment: str) -> str:
+    """Compress the tail of the draft into a short situation summary.
+
+    The planning prompt used to carry 400 characters of raw prose plus six
+    retrieved settings chunks — around 1800 characters before the model writes
+    a word. On long prompts this provider intermittently returns empty content,
+    and an empty plan is worse than a failed one (see PlanParseError).
+
+    So the same idea the retrieval layer already rests on gets applied one level
+    up: send what the planner needs to know, not the source it came from. The
+    cheap model does the compressing; the planner gets a situation, not a page.
+
+    Falls back to the raw tail if the summariser itself comes back empty —
+    a degraded plan beats no plan, and the caller still sees any hard failure.
+    """
+    if len(fragment) < 200:
+        return fragment
+    try:
+        out = await llm.complete(
+            [
+                {"role": "system", "content": _BRIEF_SYSTEM},
+                {"role": "user", "content": fragment},
+            ],
+            model=settings.llm_model,  # the cheap one, on purpose
+            temperature=0.2,
+            max_tokens=300,
+        )
+    except httpx.HTTPError:
+        return fragment[-200:]
+    return out.strip() or fragment[-200:]
 
 
 # --- ① 候选 --------------------------------------------------------------------
@@ -249,24 +316,48 @@ async def expand_plan(
 ) -> RefinePlanResponse:
     # re-ground on the chosen direction (not just the fragment) so the plan's
     # settings are relevant to where the author decided to go
+    # Retrieve against the RAW fragment: the brief is a lossy summary, and
+    # retrieval should still see the actual words the author wrote.
     query = f"{fragment}\n{candidate.summary}"
     chunks = await retrieval.retrieve_settings(
         db, project_id, query, channel="hints", top_k=top_k_settings
     )
-    raw = await llm.complete(
-        [
-            {"role": "system", "content": await prompts.resolve(db, "refine.plan")},
-            {
-                "role": "user",
-                "content": (
-                    f"【正文片段】\n{fragment}\n\n【选定走向】\n{_candidate_brief(candidate)}"
-                    f"\n\n【设定命中】\n{_settings_block(chunks)}"
-                ),
-            },
-        ],
-        temperature=0.4,  # planning is convergent — keep it grounded
+    # The planner gets a situation, not a page. Settings are capped per chunk
+    # for the same reason — a 600-character lore entry contributes one usable
+    # fact to a plan and 550 characters of prompt.
+    brief = await _plot_brief(fragment)
+    user = (
+        f"【前情提要】\n{brief}\n\n【选定走向】\n{_candidate_brief(candidate)}"
+        f"\n\n【设定命中】\n{_settings_block(chunks, cap=180)}"
     )
-    data = _parse_json(raw)
+    system = await prompts.resolve(db, "refine.plan")
+
+    # One retry: the empty-content failure is intermittent, not deterministic —
+    # the same prompt has both succeeded and returned "" on this provider. Retry
+    # before surfacing, but surface rather than substituting an empty plan.
+    data: dict = {}
+    for attempt in range(2):
+        raw = await llm.complete(
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            temperature=0.4,  # planning is convergent — keep it grounded
+            # The generator is a REASONING model: `max_tokens` covers hidden
+            # reasoning tokens as well as visible output. Measured on a
+            # deliberately trivial planning prompt: completion_tokens 2911, of
+            # which reasoning_tokens 2733 — visible content 356. The global
+            # default of 2048 is therefore consumed entirely before a single
+            # character is emitted, and the API returns content:"" rather than
+            # an error. That is what produced silent zero-constraint plans.
+            #
+            # 8192 leaves real headroom on a full prompt. Budgeted here rather
+            # than raised globally, which would widen every unrelated call.
+            max_tokens=max(settings.llm_max_tokens, 8192),
+        )
+        try:
+            data = _parse_json(raw)
+            break
+        except PlanParseError:
+            if attempt:
+                raise
 
     def _strlist(key: str) -> list[str]:
         return [str(x).strip() for x in data.get(key, []) if str(x).strip()]
