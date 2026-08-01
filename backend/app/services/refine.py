@@ -141,9 +141,19 @@ async def _plot_brief(fragment: str) -> str:
             ],
             model=settings.llm_model,  # the cheap one, on purpose
             temperature=0.2,
-            max_tokens=300,
+            # 120 characters of output, but the budget is not sized by the
+            # output — the reasoning comes out of the same allowance. This was
+            # first written as max_tokens=300 and failed on its very first run:
+            # finish_reason='length', reasoning_tokens=300, visible 0. Sizing a
+            # reasoning model's budget by the answer's length is the mistake
+            # this whole round has been about.
+            max_tokens=llm.STRUCTURED_MAX_TOKENS,
+            **llm.NO_REASONING,
         )
-    except httpx.HTTPError:
+    except (httpx.HTTPError, llm.EmptyCompletion):
+        # The docstring's promise: a degraded plan beats no plan. Hard failures
+        # in the planner itself still surface — only the optional compression
+        # step is allowed to fall back.
         return fragment[-200:]
     return out.strip() or fragment[-200:]
 
@@ -210,6 +220,8 @@ async def compose_candidates(
             },
         ],
         temperature=0.75,  # higher than 续写: candidates must diverge
+        max_tokens=llm.STRUCTURED_MAX_TOKENS,
+        **llm.NO_REASONING,
     )
     data = _parse_json(raw)
 
@@ -340,6 +352,7 @@ async def expand_plan(
         raw = await llm.complete(
             [{"role": "system", "content": system}, {"role": "user", "content": user}],
             temperature=0.4,  # planning is convergent — keep it grounded
+            **llm.NO_REASONING,
             # The generator is a REASONING model: `max_tokens` covers hidden
             # reasoning tokens as well as visible output. Measured on a
             # deliberately trivial planning prompt: completion_tokens 2911, of
@@ -350,7 +363,7 @@ async def expand_plan(
             #
             # 8192 leaves real headroom on a full prompt. Budgeted here rather
             # than raised globally, which would widen every unrelated call.
-            max_tokens=max(settings.llm_max_tokens, 8192),
+            max_tokens=llm.STRUCTURED_MAX_TOKENS,
         )
         try:
             data = _parse_json(raw)
@@ -515,6 +528,10 @@ async def verify_draft(draft: str, plan: ScenePlan) -> VerifyResult:
         ],
         model=settings.llm_judge_model,  # careful checking on the reasoner model
         temperature=0.0,
+        # An empty verdict marks every constraint FAILED (see the `.get("ok",
+        # False)` defaults below), so a starved verifier does not merely lose
+        # information — it reports a perfect draft as a total failure.
+        max_tokens=llm.STRUCTURED_MAX_TOKENS,
     )
     data = _parse_json(raw)
     inc_res = data.get("include", []) if isinstance(data.get("include"), list) else []
@@ -679,7 +696,8 @@ async def refine_write_stream(
 
     attempts: list[RefineAttempt] = []
     best_draft = ""
-    best_key = -999.0
+    # tuple key: (可用性, 必须出现命中数, 总满足数) — 见下方选优处的说明
+    best_key: tuple[float, float, float] = (-1e12, 0.0, 0.0)
     notes: str | None = None
     for i in range(max_attempts):
         yield "stage", (
@@ -702,7 +720,9 @@ async def refine_write_stream(
                     ),
                 },
                 {"role": "user", "content": user},
-            ]
+            ],
+            max_tokens=llm.PROSE_MAX_TOKENS,
+            **llm.NO_REASONING,
         )
         yield "stage", f"第 {i + 1} 稿校验中（核对必须出现/不能发生 + 复述检测）"
         overlap = imitation.ngram_overlap(draft, style_refs) if style_refs else 0.0
@@ -714,14 +734,30 @@ async def refine_write_stream(
             checks=verdict.checks,
             ngram_overlap=round(overlap, 4),
             notes=_feedback_from_checks(verdict.checks),
+            text=draft,
         )
         attempts.append(attempt)
         yield "attempt", attempt
-        # best = most constraints satisfied; plagiarism failures ranked last
+        # Ranking, in order of what actually matters:
+        #
+        #   1. an empty draft is never a candidate. It used to WIN: counting
+        #      satisfied checks rewards it for every must_not it cannot break,
+        #      so a blank page scored 12/18 while a real draft scored 2/18 and
+        #      the loop returned the blank one. "Broke nothing" is not "did the
+        #      job", and only the include side can tell them apart.
+        #   2. plagiarism failures rank below everything that isn't empty.
+        #   3. then must_include hits — the constraints that require the draft
+        #      to contain something — before the total.
+        #
+        # The total stays as a tiebreak so must_not violations still cost, but
+        # it can no longer outvote actually writing the scene.
+        inc_hits = sum(c.satisfied for c in verdict.checks if c.kind == "include")
         key = (
-            float(sum(c.satisfied for c in verdict.checks))
-            if overlap <= imitation.NGRAM_MAX_OVERLAP
-            else -100.0
+            (-1e9, 0.0, 0.0)
+            if not draft.strip()
+            else (-100.0, 0.0, 0.0)
+            if overlap > imitation.NGRAM_MAX_OVERLAP
+            else (0.0, float(inc_hits), float(sum(c.satisfied for c in verdict.checks)))
         )
         if key > best_key:
             best_key, best_draft = key, draft
@@ -741,7 +777,9 @@ async def refine_write_stream(
                         f"【内容草稿】\n{best_draft}"
                     ),
                 },
-            ]
+            ],
+            max_tokens=llm.PROSE_MAX_TOKENS,
+            **llm.NO_REASONING,
         )
         yield "stage", "复核：声音实现是否破坏了已达成的约束"
         # The point of verifying twice. A voice pass that quietly drops a
@@ -751,6 +789,7 @@ async def refine_write_stream(
         overlap = imitation.ngram_overlap(voiced, style_refs) if style_refs else 0.0
         attempt = RefineAttempt(
             attempt=len(attempts) + 1,
+            text=voiced,
             satisfied=after.satisfied,
             checks=after.checks,
             ngram_overlap=round(overlap, 4),

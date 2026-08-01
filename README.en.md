@@ -49,6 +49,7 @@ its own ideas and **records the null results, then stops building**:
 | Rhythm prior in the prompt | feed the measured rhythm back in | distance **1.219 vs 0.619**, style **3.25 vs 4.65** — both worse | **not wired into generation** |
 | Two state scales | score character pressure and narrative pressure apart; the gap is suspense | each axis test-retests at QWK **0.765 / 0.849** and clears the gate, but **cross-axis 0.721 ≈ the noise floor 0.765** | **B4/B9/G3 not built on the pair**; ask for the gap once instead |
 | Deconstruction candidate channels | structural signals can surface minority classes for stratified sampling | against real hand labels, the 转折 channel ranks at the **67th percentile — worse than chance**; 回收 at 35th (n=2) | harness kept, not wired in; sample at random instead |
+| The pipeline's contribution to "sounds like this book" | retrieval + plan + verify loop should also pull the voice closer | three arms, same model / scene / constraints: texture distance **settings-dumped 0.247 vs pipeline 0.245** — a tie; style-only 0.527 | no claim made: **closeness comes from the settings, not the pipeline** |
 | Four-way function labels (third attempt) | 300 hand-labelled scenes will settle whether the labeller works | n=294: accuracy **0.724**, kappa 0.246, **below the 0.762 majority baseline**; 转折 recall **2/16** | **line abandoned** — no function_embedding, no function-aware retrieval |
 | Five scene labels | finer categories, better labels | 0.396 accuracy against a human gold set | taxonomy rebuilt; four labels reach 0.789 |
 
@@ -204,6 +205,37 @@ Saves are rejected when an edit would change behaviour *without* erroring — dr
 `{n}` placeholder raises nothing, it just leaves the model to decide how many candidates
 to write.
 
+### Three arms: what does all this machinery actually buy?
+
+The hardest question to answer is "how is this better than pasting the settings into
+a prompt?" So: three arms, **same model, same temperature, same scene, same
+constraints** (`eval/run_three_arm.py`).
+
+| Arm | Fulfilment | **must_include** | must_not avoided | Texture distance |
+| --- | ---: | ---: | ---: | ---: |
+| A style samples only | 58% | 20% | 86% | 0.527 |
+| B all settings in the prompt | 67% | 20% | 100% | 0.247 |
+| C the pipeline | 75% | **80%** | 71% | 0.245 |
+
+**Only the must_include column was bought: 20% → 80%.** A and B are identical —
+dumping all 39 world-setting entries into the prompt does *nothing* for getting the
+required things onto the page. Settings say what the world is like; they do not say
+what this scene has to do.
+
+**B's 100% avoidance is hollow**: with must_include at 20% it mostly missed the point,
+so it never got near the prohibitions. C avoids less (71%) because it writes more of
+the required material and therefore has more chances to trip. Two sides of one coin.
+
+The asymmetry is by design: C is handed the explicit must_include / must_not and A/B
+are not. So the correct reading is not "C is smarter" — it is that **writing down what
+has to happen beats feeding in the whole world**, which is what this project does.
+
+The author reviewed a separate batch by hand and confirmed that higher fulfilment did
+correspond to better prose. **One limitation kept on the record**: those drafts carried
+their fulfilment rate in the heading, so the review was not blind and anchoring is
+possible. The three-arm drafts are exported as bare prose in separate files for a blind
+re-read.
+
 ### The one line that was stopped for good
 
 "Retrieve a reference scene by what it *does*" was the most ambitious idea here and
@@ -306,6 +338,7 @@ Every number above is reproducible — see [backend/eval/README.md](backend/eval
 | Label-agreement gate (accuracy + Cohen's kappa vs human gold) | `eval/run_mode_agreement.py` |
 | Rhythm profile (transition matrix / density curves / chapter endings) | `eval/run_rhythm_profile.py` |
 | Rhythm prior A/B (**null result**, not shipped) | `eval/run_rhythm_ablation.py` |
+| Three-arm comparison (style-only / settings-dumped / pipeline) | `eval/run_three_arm.py` | same model, scene and constraints: must_include **20% / 20% / 80%**; texture distance 0.527 / 0.247 / 0.245 |
 | Function-label gate (**null result, final**) | `eval/run_function_agreement.py` |
 | State-scale test-retest (**null result**) | `eval/run_state_reliability.py` |
 | Prompt-layer invariants (zero LLM) | `eval/check_prompts.py` |

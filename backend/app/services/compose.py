@@ -83,6 +83,8 @@ async def compose_outline(
             },
         ],
         temperature=0.6,
+        max_tokens=llm.STRUCTURED_MAX_TOKENS,
+        **llm.NO_REASONING,
     )
     data = _parse(raw)
 

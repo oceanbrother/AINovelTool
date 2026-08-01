@@ -62,7 +62,9 @@ async def suggest_idioms(
         },
     ]
 
-    raw = await llm.complete(messages, temperature=0.3)
+    raw = await llm.complete(
+        messages, temperature=0.3, max_tokens=llm.STRUCTURED_MAX_TOKENS, **llm.NO_REASONING
+    )
     picks = _parse_picks(raw)
 
     suggestions: list[IdiomSuggestion] = []

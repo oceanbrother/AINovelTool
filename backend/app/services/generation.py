@@ -167,7 +167,7 @@ async def continue_chapter_stream(
         {"role": "system", "content": await prompts.resolve(db, "generation.continue")},
         {"role": "user", "content": user},
     ]
-    async for delta in llm.stream_complete(messages):
+    async for delta in llm.stream_complete(messages, max_tokens=llm.PROSE_MAX_TOKENS, **llm.NO_REASONING):
         yield "token", delta
 
 
@@ -187,7 +187,9 @@ async def breakthrough(
             ),
         },
     ]
-    raw = await llm.complete(messages, temperature=0.9)
+    raw = await llm.complete(
+        messages, temperature=0.9, max_tokens=llm.STRUCTURED_MAX_TOKENS, **llm.NO_REASONING
+    )
     return _parse_branches(raw), chunks
 
 

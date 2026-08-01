@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import statistics
 
 import httpx
@@ -83,8 +84,21 @@ def _rates(checks) -> dict:
 
 
 def _best(attempts):
-    """The attempt refine_write_stream would return (most constraints met)."""
-    return max(attempts, key=lambda a: sum(c.satisfied for c in a.checks))
+    """The attempt refine_write_stream would return.
+
+    Must mirror the service's ranking exactly, or the harness measures a draft
+    the product would never have shown. It used to be `max(sum(satisfied))`,
+    which is what let an empty draft win: a blank page breaks no must_not, so it
+    scored 12/18 against a real draft's 2/18. Same fix as the service — empty
+    vetoed, must_include hits before the total.
+    """
+    def key(a):
+        if not a.text.strip():
+            return (-1e9, 0.0, 0.0)
+        inc = sum(c.satisfied for c in a.checks if c.kind == "include")
+        return (0.0, float(inc), float(sum(c.satisfied for c in a.checks)))
+
+    return max(attempts, key=key)
 
 
 def _fmt(r: dict) -> str:
@@ -93,8 +107,42 @@ def _fmt(r: dict) -> str:
     return f"兑现 {r['fulfill']*100:5.1f}%  (必须出现 {inc} / 规避 {exc})"
 
 
-async def run(project_id: int, num: int) -> None:
+def _dump_block(i, cand, plan, draft_c, r_c, attempts, best, rates) -> str:
+    """One direction's drafts, verbatim, with the failed constraints under each.
+
+    The ablation used to report ratios only. A 0-character draft has the exact
+    ratio profile of a bad one — every must_include missed, every must_not
+    honoured — so an empty draft was indistinguishable from a weak draft in
+    every number the harness printed. Keeping the prose is what makes the
+    difference visible, and it is also the only form the author can review.
+    """
+    out = [f"\n\n---\n\n# 走向{i}：{cand.summary}\n"]
+    out.append("**必须出现**\n" + "\n".join(f"{k}. {x}" for k, x in enumerate(plan.must_include)))
+    out.append("\n\n**不能发生**\n" + "\n".join(f"{k}. {x}" for k, x in enumerate(plan.must_not)))
+    out.append(f"\n\n## A 续写（{len(draft_c)}字 · 兑现 {r_c['fulfill']:.0%}）\n\n{draft_c}")
+    for a in attempts:
+        tag = " · 终选" if a is best else ""
+        out.append(
+            f"\n\n## 精修第 {a.attempt} 稿（{len(a.text)}字 · "
+            f"兑现 {rates(a.checks)['fulfill']:.0%}{tag}）\n\n{a.text}"
+        )
+        fails = [c for c in a.checks if not c.satisfied]
+        if fails:
+            out.append("\n\n未达标：\n" + "\n".join(
+                f"- ({c.kind}) {c.text} — {c.evidence or '（无证据）'}" for c in fails
+            ))
+    return "".join(out)
+
+
+def _flush(path: str, blocks: list[str]) -> None:
+    os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("".join(blocks))
+
+
+async def run(project_id: int, num: int, dump_path: str | None = None) -> None:
     xu, jd1, jdf = [], [], []  # 续写 / 精修单稿 / 精修终稿  fulfilment rates
+    dumped: list[str] = []
     xu_exc, jdf_exc = [], []   # must_not avoidance (the "don't spoil" metric)
 
     async with AsyncSessionLocal() as db:
@@ -128,13 +176,32 @@ async def run(project_id: int, num: int) -> None:
             v_f = _best(attempts)
 
             r_c, r_1, r_f = _rates(v_c.checks), _rates(v_1.checks), _rates(v_f.checks)
-            print(f"   续写      {_fmt(r_c)}")
-            print(f"   精修单稿  {_fmt(r_1)}")
-            print(f"   精修终稿  {_fmt(r_f)}  ({len(attempts)}稿)")
+            # Character counts sit beside the ratios on purpose: a 0-character
+            # draft has the same ratio profile as a weak one, and that is how an
+            # empty draft stayed invisible for a whole round of experiments.
+            print(f"   续写      {_fmt(r_c)}  [{len(draft_c)}字]")
+            print(f"   精修单稿  {_fmt(r_1)}  [{len(v_1.text)}字]")
+            print(f"   精修终稿  {_fmt(r_f)}  [{len(v_f.text)}字]  ({len(attempts)}稿)")
+            if dump_path:
+                dumped.append(
+                    _dump_block(i, cand, plan, draft_c, r_c, attempts, v_f, _rates)
+                )
+                # Flush after every direction, not once at the end. Two runs
+                # have already died mid-way — an exhausted budget, a dropped
+                # connection — and both times the drafts the author asked to
+                # review went with them. Rewriting the whole file each time is
+                # cheap; the drafts are not reproducible.
+                _flush(dump_path, dumped)
 
             xu.append(r_c["fulfill"]); jd1.append(r_1["fulfill"]); jdf.append(r_f["fulfill"])
             if r_c["exc_avoid"] is not None: xu_exc.append(r_c["exc_avoid"])
             if r_f["exc_avoid"] is not None: jdf_exc.append(r_f["exc_avoid"])
+
+    if dump_path and dumped:
+        os.makedirs(os.path.dirname(os.path.abspath(dump_path)) or ".", exist_ok=True)
+        with open(dump_path, "w", encoding="utf-8") as fh:
+            fh.write("".join(dumped))
+        print(f"\n稿件已导出 → {dump_path}")
 
     n = len(xu)
     if not n:
@@ -154,5 +221,6 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--project-id", type=int, required=True)
     ap.add_argument("--num", type=int, default=4)
+    ap.add_argument("--dump", help="把每一稿原样写到这个 md（用仓库外路径：稿件内嵌正文）")
     args = ap.parse_args()
-    asyncio.run(run(args.project_id, args.num))
+    asyncio.run(run(args.project_id, args.num, args.dump))

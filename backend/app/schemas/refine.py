@@ -108,6 +108,10 @@ class RefineAttempt(BaseModel):
     checks: list[ConstraintCheck]      # 逐条约束核对
     ngram_overlap: float = 0.0         # 与文风样本的复述率（可选叠加门）
     notes: str = ""                    # 供重写的反馈
+    # 稿件本体。此前只发分数卡不发正文，于是一份 0 字的稿子在界面上和评测里
+    # 都长得像"一份没达标的稿子"——空稿因此隐形了整整一轮实验。
+    # 作者要审的是文字，不是比率；评测要留证的也是文字。
+    text: str = ""
 
 
 class RefineWriteRequest(BaseModel):

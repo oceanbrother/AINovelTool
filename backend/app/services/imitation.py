@@ -82,6 +82,10 @@ async def judge_draft(draft: str, style_refs: list[str]) -> dict:
         ],
         model=settings.llm_judge_model,
         temperature=0.0,
+        # Parse failure below returns style 0 / ai_flavor 10 — the worst
+        # possible scorecard. A starved judge therefore condemns every draft,
+        # and every style number in this project comes from here.
+        max_tokens=llm.STRUCTURED_MAX_TOKENS,
     )
     match = re.search(r"\{.*\}", raw, re.DOTALL)
     if not match:
@@ -162,7 +166,9 @@ async def imitate_stream(
             [
                 {"role": "system", "content": generation._CONTINUE_SYSTEM},
                 {"role": "user", "content": user},
-            ]
+            ],
+            max_tokens=llm.PROSE_MAX_TOKENS,
+            **llm.NO_REASONING,
         )
         yield "stage", f"第 {i + 1} 稿自检中（异模型裁判 ×{JUDGE_SAMPLES} 取中位 + 复述检测）"
         overlap = ngram_overlap(draft, style_refs) if style_refs else 0.0
