@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
+from app.models.prompt_version import PromptVersion
 from app.services import prompts
 
 router = APIRouter(prefix="/prompts", tags=["prompts"])
@@ -28,6 +30,31 @@ async def list_prompts(db: AsyncSession = Depends(get_session)):
         it["rules"] = prompts.rule_count(it["body"])
         it["default_rules"] = prompts.rule_count(it["default_body"])
     return items
+
+
+@router.get("/{key}/versions")
+async def list_versions(key: str, db: AsyncSession = Depends(get_session)):
+    """Version history for a prompt slot. Current version first, then archived."""
+    try:
+        prompts.slot(key)
+    except KeyError:
+        raise HTTPException(404, "unknown prompt slot")
+    archived = (
+        await db.execute(
+            select(PromptVersion)
+            .where(PromptVersion.key == key)
+            .order_by(PromptVersion.revision.desc())
+        )
+    ).scalars().all()
+    return [
+        {
+            "revision": v.revision,
+            "body": v.body,
+            "based_on": v.based_on,
+            "created_at": v.created_at.isoformat(),
+        }
+        for v in archived
+    ]
 
 
 @router.patch("/{key}")

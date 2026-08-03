@@ -1,0 +1,144 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: novel
+          POSTGRES_PASSWORD: novel
+          POSTGRES_DB: ainovel_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Install without sentence-transformers (too heavy for CI)
+          sed 's/sentence-transformers==3.3.1/# sentence-transformers skipped in CI/' requirements.txt > requirements-ci.txt
+          pip install -r requirements-ci.txt
+
+      - name: Ruff lint
+        run: ruff check app/ tests/ eval/
+
+      - name: Mypy type check
+        run: mypy app/ --ignore-missing-imports
+
+      - name: Pytest
+        env:
+          DATABASE_URL: postgresql+asyncpg://novel:novel@localhost:5433/ainovel_test
+          EMBEDDING_BACKEND: openai
+          EMBEDDING_API_BASE: https://api.openai.com/v1
+          EMBEDDING_API_KEY: skip
+          LLM_API_BASE: https://api.openai.com/v1
+          LLM_API_KEY: skip
+        run: pytest tests/ -v --tb=short -k "not (EmbedTexts or embed_text)"
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+  eval-smoke:
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: novel
+          POSTGRES_PASSWORD: novel
+          POSTGRES_DB: ainovel_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          sed 's/sentence-transformers==3.3.1/# sentence-transformers skipped/' requirements.txt > requirements-ci.txt
+          pip install -r requirements-ci.txt
+
+      - name: Init schema
+        env:
+          DATABASE_URL: postgresql+asyncpg://novel:novel@localhost:5433/ainovel_test
+        run: |
+          python -c "
+          import asyncio
+          from app.db import engine
+          from app.models.project import Project
+          from app.models.chapter import Chapter
+          from app.models.character import Character
+          from app.models.world import WorldSetting
+          from app.models.setting_chunk import SettingChunk
+          from app.models.foreshadowing import Foreshadowing
+          from app.models.story_fact import StoryFact
+          from app.models.rolling_summary import RollingSummary
+          from app.models.style_override import StyleOverride
+          from app.models.prompt_template import PromptTemplate
+          from app.models.prompt_version import PromptVersion
+          from app.models.literary import LiteraryWork, LiteraryKnowledge
+          from app.models.idiom import Idiom
+          from app.models.narrative import NarrativePlan, NarrativeUnit
+          from app.models.corpus_segment import CorpusSegment
+          from app.models.knowledge_event import KnowledgeEvent
+          from app.db import Base
+          async def init():
+              async with engine.begin() as conn:
+                  await conn.run_sync(Base.metadata.create_all)
+          asyncio.run(init())
+          "
+
+      - name: Run smoke tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://novel:novel@localhost:5433/ainovel_test
+          EMBEDDING_BACKEND: openai
+          EMBEDDING_API_BASE: https://api.openai.com/v1
+          EMBEDDING_API_KEY: skip
+          LLM_API_BASE: https://api.openai.com/v1
+          LLM_API_KEY: skip
+        run: |
+          pytest eval/smoke.py -v --tb=short

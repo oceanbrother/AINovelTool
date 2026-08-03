@@ -14,6 +14,7 @@ from app.schemas.refine import ScenePlan
 LOCKABLE_FIELDS = (
     "goal", "desire", "conflict", "info_shift",
     "emotion_curve", "must_include", "must_not", "end_state",
+    "subtext", "register_pattern", "register_plan",
 )
 
 

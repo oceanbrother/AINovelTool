@@ -51,6 +51,23 @@ class RefineCandidatesResponse(BaseModel):
 
 # --- ② 场景计划 ----------------------------------------------------------------
 
+class SubtextPlan(BaseModel):
+    """情感潜台词 —— 人物真正感受到什么，以及如何掩饰。
+
+    解决"模型直接宣布情绪"的问题：不是告诉模型"不要写孤独"，
+    而是给它一个替代方案——用行为、物件和停顿来泄露情绪。
+    设计文档见 docs/style-modeling-and-human-in-the-loop.md §2.2。
+    """
+
+    surface_event: str = ""            # 表面发生什么
+    hidden_need: str = ""              # 人物真正渴望什么
+    denied_emotion: str = ""           # 人物不愿承认什么
+    masking_behavior: str = ""         # 用什么行为掩饰
+    rupture_moment: str = ""           # 哪个瞬间让伪装短暂破裂
+    emotional_residue: str = ""        # 场景结束后留下什么情绪
+    emotion_explicitness: float = 0.3  # 直接点破情绪的容许度 (0=全靠行为泄露, 1=可以明说)
+
+
 class ScenePlan(BaseModel):
     """场景计划 —— 结构化、可校验的中间层。约束"这场要完成什么"，不写台词动作。"""
 
@@ -67,6 +84,9 @@ class ScenePlan(BaseModel):
     end_state: str = ""                # 结尾状态（为下一场留口子）
     scene_tag: str = ""                # 场景标签（scene.classify_text，零 LLM）
     grounded: list[str] = []           # 接地设定原文
+    subtext: SubtextPlan | None = None # 情感潜台词（T2-1：供声音实现阶段使用）
+    register_plan: list[dict] = []      # 语域转调计划（T2-2）：有序阶段，每阶段含 register 标签和 paragraphs 数量
+    register_pattern: str = ""          # 使用的转调模式名（如 fantasy_fall / delayed_grief / comic_mask / comedy_to_suspense）
 
 
 class RefinePlanRequest(BaseModel):

@@ -153,3 +153,30 @@ def texture(text: str) -> dict[str, float]:
         "punct_density": round(punct_density(text), 4),
         "avg_para_len": round(avg_paragraph_len(text), 2),
     }
+
+
+def texture_distance(text: str, target: str) -> float:
+    """How far `text` sits from `target` in texture space. 0 = identical.
+
+    Mean **symmetric** relative difference across the five dimensions:
+    |a-b| / (|a|+|b|), which is bounded in [0,1] per dimension. So a metric
+    measured in [0,1] (dialogue ratio) and one measured in characters
+    (paragraph length) contribute comparably instead of the larger scale
+    swamping the rest.
+
+    Symmetric rather than |a-b|/|b| because the plain relative form explodes
+    when the target has a zero in any dimension — pure narration has a dialogue
+    ratio of exactly 0, and the first version returned 400001.371 for that case,
+    letting one dimension swallow the other four. Bounded per dimension means
+    no single axis can dominate no matter what the target looks like.
+
+    **A comparison, never a threshold.** The project has already measured what
+    happens when texture statistics are written into a prompt as a target —
+    both indicators got worse. This is for the other, sanctioned use: deciding
+    whether a rewrite moved toward the reference or away from it. Which of two
+    drafts is closer is answerable; "is 0.3 good" is not.
+    """
+    a, b = texture(text), texture(target)
+    return sum(
+        abs(a[k] - b[k]) / d if (d := abs(a[k]) + abs(b[k])) else 0.0 for k in a
+    ) / len(a)

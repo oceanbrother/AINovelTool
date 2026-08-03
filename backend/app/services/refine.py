@@ -283,12 +283,25 @@ _PLAN_SYSTEM = (
     "· must_include：必须出现的具体物象 / 事件数组（越具体越好，"
     "如『柜台下的旧报纸』『停摆的电子钟』）\n"
     "· must_not：不能发生的事数组（如『直接揭示幕后身份』『某角色死亡』）\n"
-    "· end_state：结尾状态（这一场结束时的处境，为下一场留口子）\n\n"
+    "· end_state：结尾状态（这一场结束时的处境，为下一场留口子）\n"
+    "· subtext：情感潜台词对象，包含以下字段：\n"
+    "  · surface_event：表面发生什么\n"
+    "  · hidden_need：人物真正渴望什么（不是表面欲望，是深层情感需要）\n"
+    "  · denied_emotion：人物不愿承认什么情绪\n"
+    "  · masking_behavior：人物用什么行为掩饰该情绪\n"
+    "  · rupture_moment：哪个瞬间让伪装短暂破裂\n"
+    "  · emotional_residue：场景结束后留下什么情绪残留\n"
+    "  · emotion_explicitness：0-1 的数值，建议 0.25-0.35——越低越要靠行为、物件和停顿泄露情绪，"
+    "越高越允许叙述者直接点破\n\n"
     '只输出 JSON：{"goal":"...","desire":"...","conflict":"...","info_shift":"...",'
-    '"emotion_curve":"...","must_include":["...","..."],"must_not":["...","..."],'
-    '"end_state":"..."}\n'
+    '"emotion_curve":"...","must_include":["..."],"must_not":["..."],'
+    '"end_state":"...","subtext":{...}}\n'
     "规则：must_include / must_not 必须是能客观判断在不在的具体项，不写抽象要求；"
     "所有内容基于给定设定，不虚构新设定。\n"
+    # 潜台词规则
+    "subtext 的核心原则：表面事件 ≠ 人物真正感受到的。人物不会直接说出 hidden_need 和 "
+    "denied_emotion——它们通过 masking_behavior 泄露、在 rupture_moment 短暂暴露、"
+    "以 emotional_residue 的形式延续到下一场。\n"
     # A model asked for a scene plan will happily stack "establish character +
     # advance relationship + plant a clue + escalate conflict + hint at theme"
     # into one scene. Every scene then strains, and a long book loses its
@@ -375,6 +388,20 @@ async def expand_plan(
     def _strlist(key: str) -> list[str]:
         return [str(x).strip() for x in data.get(key, []) if str(x).strip()]
 
+    subtext_raw = data.get("subtext", {}) if isinstance(data.get("subtext"), dict) else {}
+    subtext = None
+    if any(subtext_raw.get(k) for k in ("hidden_need", "masking_behavior", "rupture_moment")):
+        from app.schemas.refine import SubtextPlan
+        subtext = SubtextPlan(
+            surface_event=str(subtext_raw.get("surface_event", "")),
+            hidden_need=str(subtext_raw.get("hidden_need", "")),
+            denied_emotion=str(subtext_raw.get("denied_emotion", "")),
+            masking_behavior=str(subtext_raw.get("masking_behavior", "")),
+            rupture_moment=str(subtext_raw.get("rupture_moment", "")),
+            emotional_residue=str(subtext_raw.get("emotional_residue", "")),
+            emotion_explicitness=float(subtext_raw.get("emotion_explicitness", 0.3)),
+        )
+
     plan = ScenePlan(
         goal=str(data.get("goal", "")),
         desire=str(data.get("desire", "")),
@@ -385,7 +412,27 @@ async def expand_plan(
         must_not=_strlist("must_not"),
         end_state=str(data.get("end_state", "")),
         grounded=[c.content for c in chunks],
+        subtext=subtext,
     )
+    # Auto-select a register pattern based on the direction's emotional shape.
+    # Heuristic, not definitive — the author edits it in the plan UI.
+    # The four patterns from the design doc §4 map roughly to:
+    #   fantasy_fall       — 幻想 + 暴露缺口 + 铺垫
+    #   delayed_grief      — 揭示 + 背叛/后果 + 情感延迟
+    #   comic_mask         — 日常困境 + 幽默掩饰 + 无法消化的真相
+    #   comedy_to_suspense — 生活化对话 + 无意泄露 + 悬疑升起
+    _emo = plan.emotion_curve.lower()
+    _goal = plan.goal.lower()
+    if any(w in _emo for w in ("幻想", "想象", "坠落", "打断")):
+        plan.register_pattern = "fantasy_fall"
+    elif any(w in _emo for w in ("悲伤", "延迟", "离开", "情绪")):
+        plan.register_pattern = "delayed_grief"
+    elif any(w in _goal for w in ("泄露", "说出", "警觉", "悬疑", "无意")):
+        plan.register_pattern = "comedy_to_suspense"
+    elif any(w in _emo for w in ("掩饰", "玩笑", "调侃", "伪装", "尴尬")):
+        plan.register_pattern = "comic_mask"
+    # else: no pattern — voice pass won't constrain register
+
     # scene tag via the anchor-vector classifier (zero LLM) — reused at write
     # time to pull same-scene style samples
     tag_seed = " ".join(filter(None, [plan.goal, plan.conflict, plan.emotion_curve]))
@@ -629,6 +676,27 @@ def _plan_block(plan: ScenePlan) -> str:
             lines.append(f"· {label}：{val}")
     if plan.must_include:
         lines.append("· 必须出现（务必在正文里落实）：" + "；".join(plan.must_include))
+    # Register plan: if specified, give the draft stage the expected sequence so
+    # the content writer can structure paragraphs accordingly.
+    if plan.register_pattern:
+        guide = _register_guide(plan.register_pattern)
+        if guide:
+            lines.append(f"· 语域转调模式「{plan.register_pattern}」：\n{guide}")
+    # Emotional subtext: if the planner provided one, give it to the draft stage
+    # so the content writer knows what to show rather than tell.
+    if plan.subtext:
+        st = plan.subtext
+        subtext_lines = []
+        if st.masking_behavior:
+            subtext_lines.append(f"人物的真实情绪通过「{st.masking_behavior}」来掩饰")
+        if st.rupture_moment:
+            subtext_lines.append(f"在「{st.rupture_moment}」的瞬间让伪装短暂破裂")
+        if st.emotional_residue:
+            subtext_lines.append(f"场景结束时留下「{st.emotional_residue}」的余味")
+        if st.denied_emotion:
+            subtext_lines.append(f"人物不愿承认「{st.denied_emotion}」，但允许读者感觉到")
+        if subtext_lines:
+            lines.append("· 情感潜台词：" + "；".join(subtext_lines))
     # the author's prohibitions and the continuity rules compiled from knowledge
     # state read the same way to the model, so they go in one list; only the UI
     # needs to know which is which
@@ -655,6 +723,75 @@ _DRAFT_SYSTEM = (
     "只输出正文。"
 )
 
+# --- 语域转调模式（T2-2）--------------------------------------------------------
+# Four register-transition patterns adapted from 《龙族》's narrative voice.
+# Each is an ordered sequence of (register_label, paragraph_count).
+#
+# A register is how the narrator positions itself relative to the story:
+#   mundane      日常/琐碎现实
+#   comic        幽默/自嘲/挤兑
+#   lyrical      抒情/宏大想象
+#   suspense     悬疑/不安
+#   quiet        克制收尾/短句停顿
+#
+# Patterns are explicit ordered constraints — the project's evidence says these
+# work (must_include 59→93%). They are NOT statistics to inject into a prompt
+# (rhythm was measured to fail that way).
+
+REGISTER_PATTERNS: dict[str, list[dict]] = {
+    "fantasy_fall": [
+        {"register": "mundane", "paragraphs": 2, "note": "琐碎现实：考试、跑腿、旧电脑"},
+        {"register": "comic", "paragraphs": 1, "note": "人物开玩笑缓解不适"},
+        {"register": "lyrical", "paragraphs": 3, "note": "宏大幻想不断扩张，获得想象中的注视"},
+        {"register": "mundane", "paragraphs": 1, "note": "琐碎任务突然打断，回到现实"},
+    ],
+    "delayed_grief": [
+        {"register": "mundane", "paragraphs": 2, "note": "别人说出重要信息"},
+        {"register": "comic", "paragraphs": 1, "note": "关注无关细节，转移话题"},
+        {"register": "mundane", "paragraphs": 2, "note": "继续表现正常，假装不受影响"},
+        {"register": "quiet", "paragraphs": 1, "note": "离开公共场合后情绪才真正出现"},
+    ],
+    "comic_mask": [
+        {"register": "mundane", "paragraphs": 2, "note": "现实困境或尴尬处境"},
+        {"register": "comic", "paragraphs": 2, "note": "人物开玩笑，叙述者继续调侃"},
+        {"register": "suspense", "paragraphs": 1, "note": "出现一个无法被玩笑消化的事实"},
+        {"register": "quiet", "paragraphs": 1, "note": "短句收尾，不解释、不总结"},
+    ],
+    "comedy_to_suspense": [
+        {"register": "comic", "paragraphs": 2, "note": "人物互相挤兑，对话保持生活化"},
+        {"register": "mundane", "paragraphs": 1, "note": "日常节奏继续"},
+        {"register": "suspense", "paragraphs": 2, "note": "某人无意说出不该知道的信息"},
+        {"register": "quiet", "paragraphs": 1, "note": "主角短暂迟疑，对话继续但读者警觉"},
+    ],
+}
+
+# Which scene functions each pattern suits best (from the design doc §4)
+PATTERN_FUNCTION_MAP: dict[str, list[str]] = {
+    "fantasy_fall":         ["expose_character_lack", "show_compensatory_behavior", "setup"],
+    "delayed_grief":        ["reveal_hidden_desire", "break_trust", "show_consequence", "payoff"],
+    "comic_mask":           ["expose_character_lack", "reveal_hidden_desire", "show_consequence"],
+    "comedy_to_suspense":   ["plant_question", "provide_clue", "create_information_asymmetry", "build_tension"],
+}
+
+
+def _register_guide(pattern_name: str) -> str:
+    """Render a register pattern as voice-pass instructions."""
+    pattern = REGISTER_PATTERNS.get(pattern_name)
+    if not pattern:
+        return ""
+    stages = []
+    for i, stage in enumerate(pattern):
+        label = {
+            "mundane": "日常", "comic": "幽默/自嘲",
+            "lyrical": "抒情/宏大", "suspense": "悬疑",
+            "quiet": "克制/停顿",
+        }.get(stage["register"], stage["register"])
+        stages.append(
+            f"  第{i+1}段（{label}，{stage['paragraphs']}段）：{stage['note']}"
+        )
+    return "按以下语域顺序重新叙述（每段=一个自然段落群）：\n" + "\n".join(stages)
+
+
 _VOICE_SYSTEM = (
     "你是小说代笔，现在只负责**换一种讲法**，不负责改故事。\n"
     "给你一份【内容草稿】和【文风样本】。请依照样本的句长节奏、标点密度与用词习惯，"
@@ -663,6 +800,10 @@ _VOICE_SYSTEM = (
     "（草稿没说破的，你也不能说破）。\n"
     "**应当改动**：把直接解释情绪的句子改成行为、动作与具体物象；"
     "让对白和细节承担情绪，而不是由叙述者代为宣布。\n"
+    "如果有【情感潜台词】，遵守以下规则：\n"
+    "· 人物不会直接说出 hidden_need 和 denied_emotion——通过 masking_behavior 泄露；\n"
+    "· 在 rupture_moment 处让伪装短暂破裂（一个动作、一句口误、一次停顿）；\n"
+    "· 场景结尾保留 emotional_residue 的余味，不总结、不升华。\n"
     "这不是润色——是按目标语感重新讲述同一件事。只输出正文。"
 )
 
@@ -767,21 +908,42 @@ async def refine_write_stream(
 
     if two_stage and best_draft:
         yield "stage", "声音实现：按文风样本重新叙述（不改事件与信息边界）"
+        # Compose the voice user prompt: style samples + content draft + subtext
+        voice_user = (
+            f"【文风样本】\n{chr(10).join(f'---{chr(10)}{s}' for s in style_refs) if style_refs else '（无）'}\n\n"
+            f"【内容草稿】\n{best_draft}"
+        )
+        # Inject subtext as explicit voice instructions if available
+        if plan.subtext:
+            st = plan.subtext
+            subtext_guide = []
+            if st.hidden_need:
+                subtext_guide.append(f"人物真正渴望的是「{st.hidden_need}」，但不会直接说出来")
+            if st.masking_behavior:
+                subtext_guide.append(f"通过「{st.masking_behavior}」来掩饰真实情绪")
+            if st.rupture_moment:
+                subtext_guide.append(f"在「{st.rupture_moment}」让伪装短暂破裂——一个动作或细节即可")
+            if st.emotional_residue:
+                subtext_guide.append(f"结尾留下「{st.emotional_residue}」的余味，不总结、不升华")
+            if st.denied_emotion:
+                subtext_guide.append(f"人物不承认「{st.denied_emotion}」——让读者感觉到，但让人物回避")
+            if subtext_guide:
+                voice_user += "\n\n【情感潜台词】\n" + "\n".join(f"· {g}" for g in subtext_guide)
+        # Inject register plan if specified
+        if plan.register_pattern:
+            guide = _register_guide(plan.register_pattern)
+            if guide:
+                voice_user += "\n\n【语域转调】\n" + guide
+                voice_user += "\n\n每个阶段的段落数是大致指引——可以用更多或更少段落，但转调顺序请严格遵守。"
         voiced = await llm.complete(
             [
                 {"role": "system", "content": await prompts.resolve(db, "refine.voice")},
-                {
-                    "role": "user",
-                    "content": (
-                        f"【文风样本】\n{chr(10).join(f'---{chr(10)}{s}' for s in style_refs)}\n\n"
-                        f"【内容草稿】\n{best_draft}"
-                    ),
-                },
+                {"role": "user", "content": voice_user},
             ],
             max_tokens=llm.PROSE_MAX_TOKENS,
             **llm.NO_REASONING,
         )
-        yield "stage", "复核：声音实现是否破坏了已达成的约束"
+        yield "stage", "复核：约束有没有被破坏，文风有没有真的变近"
         # The point of verifying twice. A voice pass that quietly drops a
         # required object or lets a character say what the draft withheld would
         # otherwise be invisible — the prose reads better and the scene is wrong.
@@ -799,13 +961,40 @@ async def refine_write_stream(
         yield "attempt", attempt
         before_ok = sum(c.satisfied for c in attempts[-2].checks)
         after_ok = sum(c.satisfied for c in after.checks)
-        if after_ok >= before_ok and overlap <= imitation.NGRAM_MAX_OVERLAP:
+
+        # Two gates, not one. The constraint gate was here from the start; the
+        # texture gate was not, and its absence made the whole pass pointless:
+        # measured, the voice pass moved texture from 0.484 to 0.520 — away from
+        # the samples it was rewriting toward — and was accepted anyway, because
+        # the only question asked was whether constraints had broken.
+        #
+        # A stage whose entire job is the voice needs the voice in its exit
+        # condition. The target is the style samples themselves, which is what
+        # the pass was handed; no threshold is involved, only "closer or not"
+        # (see rhythm.texture_distance on why a threshold would be unfounded).
+        ref_text = "\n".join(style_refs)
+        moved_closer = True
+        if style_refs:
+            d_before = rhythm.texture_distance(best_draft, ref_text)
+            d_after = rhythm.texture_distance(voiced, ref_text)
+            moved_closer = d_after <= d_before
+
+        if (
+            after_ok >= before_ok
+            and moved_closer
+            and overlap <= imitation.NGRAM_MAX_OVERLAP
+        ):
             best_draft = voiced
-        else:
-            # keep the plain draft: a scene that is correct and flat beats one
-            # that reads well and breaks the plan
+        elif after_ok < before_ok:
+            # a scene that is correct and flat beats one that reads well and
+            # breaks the plan
             yield "stage", (
                 f"声音实现使约束达成从 {before_ok} 降到 {after_ok}，保留内容草稿"
+            )
+        elif not moved_closer:
+            yield "stage", (
+                f"声音实现使文风距离从 {d_before:.3f} 增到 {d_after:.3f}，"
+                "没有更接近样本，保留内容草稿"
             )
 
     yield "result", (best_draft, attempts, chunks)

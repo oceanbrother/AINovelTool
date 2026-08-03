@@ -9,11 +9,13 @@ generation services knowing the difference. Exposes:
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import AsyncGenerator
 
 import httpx
 
 from app.core.config import settings
+from app.core.observability import record_call
 
 Message = dict[str, str]  # {"role": "system|user|assistant", "content": "..."}
 
@@ -98,7 +100,13 @@ class EmptyCompletion(RuntimeError):
 
 
 async def complete(messages: list[Message], **overrides) -> str:
-    """Non-streaming completion -> the assistant message content."""
+    """Non-streaming completion -> the assistant message content.
+
+    Token usage is recorded as a side effect (observability.record_call).
+    The return type is unchanged — callers don't need to be aware of telemetry.
+    """
+    t0 = time.monotonic()
+    model = overrides.get("model", settings.llm_model)
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(
             f"{settings.llm_api_base}/chat/completions",
@@ -107,14 +115,27 @@ async def complete(messages: list[Message], **overrides) -> str:
         )
         resp.raise_for_status()
         data = resp.json()
+    elapsed = (time.monotonic() - t0) * 1000
     choice = data["choices"][0]
     content = choice.get("message", {}).get("content") or ""
+
+    # Record token usage — the API returns it for free; we were discarding it
+    usage = data.get("usage", {}) or {}
+    details = usage.get("completion_tokens_details", {}) or {}
+    record_call(
+        operation=overrides.get("_op", "llm"),
+        model=model,
+        latency_ms=elapsed,
+        prompt_tokens=usage.get("prompt_tokens", 0),
+        completion_tokens=usage.get("completion_tokens", 0),
+        reasoning_tokens=details.get("reasoning_tokens", 0),
+    )
+
     if not content.strip():
-        usage = data.get("usage", {}) or {}
         raise EmptyCompletion(
             f"empty completion (finish_reason={choice.get('finish_reason')!r}, "
             f"completion_tokens={usage.get('completion_tokens')}, "
-            f"reasoning_tokens={(usage.get('completion_tokens_details') or {}).get('reasoning_tokens')}, "
+            f"reasoning_tokens={details.get('reasoning_tokens')}, "
             f"max_tokens={_payload(messages, stream=False, **overrides)['max_tokens']}) "
             "— on a reasoning model the budget covers hidden reasoning too"
         )

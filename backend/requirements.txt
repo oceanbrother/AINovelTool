@@ -21,3 +21,11 @@ sentence-transformers==3.3.1
 
 # --- Eval / dev ---
 numpy==2.2.1
+
+# --- Testing ---
+pytest==8.3.4
+pytest-asyncio==0.25.0
+
+# --- Lint & type checking ---
+ruff==0.9.1
+mypy==1.14.1

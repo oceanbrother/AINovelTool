@@ -1,0 +1,20 @@
+{
+  "goal": "推进主线剧情，揭示世界观的一角",
+  "desire": "主角想弄清楚异常事件的真相",
+  "conflict": "周围人不相信主角的发现",
+  "info_shift": "读者获得新线索但主角仍困惑",
+  "emotion_curve": "日常 → 违和 → 紧张 → 暂时平息",
+  "must_include": [
+    "主角发现某个异常细节",
+    "至少一个配角否认或忽视该细节",
+    "场景结束时回到日常表面"
+  ],
+  "must_not": [
+    "直接揭示超自然存在的真实身份",
+    "主角获得决定性证据",
+    "使用命运的齿轮等俗套表达"
+  ],
+  "end_state": "reader_curiosity_up, character_frustrated",
+  "grounded": [],
+  "chapter_id": 3
+}

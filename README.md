@@ -2,6 +2,8 @@
 
 **中文** | [English](README.en.md)
 
+[![CI](https://github.com/oceanbrother/AINovelTool/actions/workflows/ci.yml/badge.svg)](https://github.com/oceanbrother/AINovelTool/actions/workflows/ci.yml)
+
 > 一个面向**都市幻想长篇小说**的 AI 协作助手。通过
 > "设定库 → RAG 检索 → 上下文组装 → AI 生成 → 滚动摘要回写" 的闭环，解决**卡文**与
 > **创作速度慢**两大痛点；并在同一套检索底座上扩展**文学引用**与**成语推荐**。

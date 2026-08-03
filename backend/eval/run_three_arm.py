@@ -18,7 +18,9 @@
   与参考样本的 n-gram 重叠   模仿得越像越可能是在复述，低者胜
   俗套命中                    services/cliche.py，零 LLM
   直接情绪句                  services/rhythm.py，零 LLM
-  纹理距离                    与作者已写正文的距离，低者更像这本书
+  纹理距离                    与**参考作品**的距离，低者更像它。第一版拿项目自己的
+                              章节当基准，实测那 84,566 字里作者亲笔只占 6%，其余是工具
+                              生成的——自我参照，作废。
 
     python eval/run_three_arm.py --plan <ab_plan.json> --materials <ab3_materials.json> \
         --out-dir <仓库外目录>
@@ -39,6 +41,7 @@ from app.core import llm
 from app.core.config import settings
 from app.db import AsyncSessionLocal
 from app.models.chapter import Chapter
+from app.models.corpus_segment import CorpusSegment
 from app.schemas.refine import PlanCandidate, ScenePlan
 from app.services import cliche, imitation, refine, rhythm
 
@@ -79,13 +82,19 @@ async def _write_arm(system: str, user: str) -> str:
     )
 
 
-def _program_metrics(draft: str, refs: list[str], author_texts: list[str]) -> dict:
-    """零 LLM 的指标。它们不知道场景计划，所以不偏向任何一臂。"""
+def _program_metrics(draft: str, refs: list[str], target: dict | None) -> dict:
+    """零 LLM 的指标。它们不知道场景计划，所以不偏向任何一臂。
+
+    纹理的参照系是**参考作品**（龙族），不是作者自己的正文。第一版拿项目里
+    全部章节当基准，实测那 84,566 字里作者亲笔只占 6%，其余是本会话生成的
+    ——那个"距离"量的是"像不像我写的续篇"，自我参照，任何结论都不成立。
+
+    参考作品是外部的，且正是文风样本的来源，所以"像不像它"这个问题本身成立。
+    """
     tex = rhythm.texture(draft)
-    author = rhythm.texture("\n".join(author_texts)) if author_texts else None
     dist = (
-        sum(abs(tex[k] - author[k]) / max(abs(author[k]), 1e-6) for k in tex) / len(tex)
-        if author else None
+        sum(abs(tex[k] - target[k]) / max(abs(target[k]), 1e-6) for k in tex) / len(tex)
+        if target else None
     )
     return {
         "字数": len(draft),
@@ -103,6 +112,7 @@ async def main() -> None:
     ap.add_argument("--materials", required=True)
     ap.add_argument("--out-dir", required=True, help="仓库外目录：稿件内嵌正文")
     ap.add_argument("--project-id", type=int, default=7)
+    ap.add_argument("--corpus", default="龙族", help="纹理参照的参考作品")
     args = ap.parse_args()
 
     p = json.load(io.open(args.plan, encoding="utf-8"))
@@ -133,19 +143,25 @@ async def main() -> None:
     async with AsyncSessionLocal() as db:
         chapter = await db.get(Chapter, p["chapter_id"])
         attempts = []
+        # two_stage=True：内容通道不给文风样本 → 声音通道按样本重述且禁改事件。
+        # 这是本项目唯一专门管文风的机制。第一版没开，等于关着风格功能比文风。
+        # 它上一轮实测是分裂的：约束兑现 88.0% vs 72.6% 更好，但 style 3.20 vs
+        # 3.80 更差，且 1/5 概率破坏已达成约束被复核挡下。
         async for kind, data in refine.refine_write_stream(
-            db, chapter, plan, None, max_attempts=2
+            db, chapter, plan, None, max_attempts=2, two_stage=True
         ):
             if kind == "result":
                 drafts["C 现有管线"], attempts, _ = data
         print(f"C 完成 {len(drafts['C 现有管线'])} 字（{len(attempts)} 稿）", flush=True)
 
-        author_texts = [
-            (c.content or "")
-            for c in (await db.execute(
-                select(Chapter).where(Chapter.project_id == args.project_id)
-            )).scalars().all()
-        ]
+        # 参照系 = 参考作品本身。抽样而非全量：纹理在几万字上已经稳定。
+        segs = (await db.execute(
+            select(CorpusSegment).where(CorpusSegment.work == args.corpus)
+            .order_by(CorpusSegment.chapter_no, CorpusSegment.seq).limit(120)
+        )).scalars().all()
+        target = rhythm.texture("\n".join(s.text for s in segs)) if segs else None
+        print(f"纹理参照系：《{args.corpus}》{len(segs)} 段" if segs
+              else "纹理参照系：无（语料未入库）", flush=True)
         rows = []
         for name, d in drafts.items():
             v = await refine.verify_draft(d, plan)
@@ -155,7 +171,7 @@ async def main() -> None:
                 "兑现": sum(c.satisfied for c in v.checks) / max(len(v.checks), 1),
                 "必须出现": sum(c.satisfied for c in inc) / max(len(inc), 1),
                 "规避": sum(c.satisfied for c in exc) / max(len(exc), 1),
-                **_program_metrics(d, m["style_samples"], author_texts),
+                **_program_metrics(d, m["style_samples"], target),
             }))
 
     print("\n===== 结果 =====")

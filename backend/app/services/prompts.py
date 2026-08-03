@@ -212,6 +212,14 @@ async def save(db: AsyncSession, key: str, body: str) -> PromptTemplate:
         )
         db.add(row)
     else:
+        # Archive the current version before overwriting
+        from app.models.prompt_version import PromptVersion
+        db.add(PromptVersion(
+            key=row.key,
+            body=row.body,
+            revision=row.revision,
+            based_on=row.based_on,
+        ))
         row.body = body
         row.revision += 1
         row.based_on = default(key)

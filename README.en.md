@@ -2,6 +2,8 @@
 
 [中文](README.md) | **English**
 
+[![CI](https://github.com/oceanbrother/AINovelTool/actions/workflows/ci.yml/badge.svg)](https://github.com/oceanbrother/AINovelTool/actions/workflows/ci.yml)
+
 > An AI co-writing assistant for long-form **urban-fantasy fiction**. A closed loop of
 > *setting library → RAG retrieval → context assembly → LLM generation → rolling-summary
 > write-back* attacks the two pains of serial fiction: writer's block and slow drafting —
